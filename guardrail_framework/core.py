@@ -56,7 +56,7 @@ class GuardrailPolicy:
     description: str = ""
     version: str = "1.0"
     enabled: bool = True
-    backend: GuardrailBackend = GuardrailBackend.CUSTOM
+    backend: GuardrailBackend = GuardrailBackend.GUARDRAILS_AI
     
     # Risk configuration
     risk_categories: List[RiskCategory] = field(default_factory=lambda: [RiskCategory.PROMPT_INJECTION])

@@ -4,12 +4,24 @@ Demonstrates how to use the framework in real-world scenarios
 """
 
 import json
-from core import (
-    GuardrailFramework, GuardrailPolicy, GuardrailBackend,
-    RiskCategory, ActionType, ABTestConfig
-)
-from compiler import PolicyCompiler, UnifiedPolicyBuilder, PolicyTemplates
-from observability import ObservabilityStack
+import sys
+import os
+
+try:
+    from guardrail_framework.core import (
+        GuardrailFramework, GuardrailPolicy, GuardrailBackend,
+        RiskCategory, ActionType, ABTestConfig
+    )
+    from guardrail_framework.compiler import PolicyCompiler, UnifiedPolicyBuilder, PolicyTemplates
+    from guardrail_framework.observability import ObservabilityStack
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from guardrail_framework.core import (
+        GuardrailFramework, GuardrailPolicy, GuardrailBackend,
+        RiskCategory, ActionType, ABTestConfig
+    )
+    from guardrail_framework.compiler import PolicyCompiler, UnifiedPolicyBuilder, PolicyTemplates
+    from guardrail_framework.observability import ObservabilityStack
 
 
 # ============================================================================

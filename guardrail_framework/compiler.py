@@ -266,6 +266,7 @@ class PolicyTemplates:
         return UnifiedPolicyBuilder() \
             .with_name("Strict Security") \
             .with_description("Maximum security enforcement") \
+            .with_backend(GuardrailBackend.GUARDRAILS_AI) \
             .with_risk_categories([
                 RiskCategory.PROMPT_INJECTION,
                 RiskCategory.JAILBREAKING,
@@ -276,13 +277,14 @@ class PolicyTemplates:
             .with_action(ActionType.BLOCK) \
             .with_tag("security") \
             .build()
-    
+
     @staticmethod
     def privacy_focused() -> GuardrailPolicy:
         """Privacy-focused policy - emphasizes PII redaction"""
         return UnifiedPolicyBuilder() \
             .with_name("Privacy Focused") \
             .with_description("Emphasis on data privacy and PII protection") \
+            .with_backend(GuardrailBackend.PRESIDIO) \
             .with_risk_categories([
                 RiskCategory.DATA_LEAKAGE,
                 RiskCategory.INDIRECT_ATTACK,
@@ -291,13 +293,14 @@ class PolicyTemplates:
             .with_action(ActionType.REDACT) \
             .with_tag("privacy") \
             .build()
-    
+
     @staticmethod
     def balanced() -> GuardrailPolicy:
         """Balanced policy - allows some risk, redacts sensitive data"""
         return UnifiedPolicyBuilder() \
             .with_name("Balanced") \
             .with_description("Balanced security and usability") \
+            .with_backend(GuardrailBackend.GUARDRAILS_AI) \
             .with_risk_categories([
                 RiskCategory.PROMPT_INJECTION,
                 RiskCategory.DATA_LEAKAGE,
@@ -306,13 +309,14 @@ class PolicyTemplates:
             .with_action(ActionType.REDACT) \
             .with_tag("balanced") \
             .build()
-    
+
     @staticmethod
     def agent_execution() -> GuardrailPolicy:
         """Policy for agentic AI - focuses on tool validation"""
         return UnifiedPolicyBuilder() \
             .with_name("Agent Execution") \
             .with_description("Guardrails for autonomous agent execution") \
+            .with_backend(GuardrailBackend.NEMO) \
             .with_risk_categories([
                 RiskCategory.MALICIOUS_TOOL_USE,
                 RiskCategory.UNSAFE_CODE,
