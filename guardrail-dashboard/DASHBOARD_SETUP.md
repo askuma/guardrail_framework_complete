@@ -3,16 +3,22 @@
 ## What you get
 
 A live React dashboard at `http://localhost:3000` that talks to the FastAPI
-backend at `http://localhost:8000`.  Six tabs:
+backend at `http://localhost:8000`.  Nine tabs:
 
 | Tab | What it shows |
 |-----|--------------|
 | 📊 Overview   | KPIs, check-volume chart, action breakdown pie, backend bar chart |
 | 🧪 Live Test  | Type text, pick a policy, run input/output checks in real time |
 | 📋 Policies   | Create / delete policies; one-click templates |
+| ✅ Testing    | Run the built-in adversarial smoke suite against a policy (Gap 1) |
+| 💓 Status     | Per-policy health, error rates, p95 latency, blocklist control (Gaps 8/9/11) |
+| 🗂 Versions   | Snapshot history + one-click rollback, bundle export (Gaps 4/5) |
 | 🚨 Alerts     | Active alerts, resolve button, auto-refreshes every 10 s |
 | 🔀 A/B Tests  | Create tests, simulate traffic assignment |
 | 📜 Audit Log  | Every guardrail check, searchable, sortable |
+
+The header shows a live ⚡ indicator whenever a policy-change event arrives over
+the Server-Sent Events stream (Gap 6) — the dashboard auto-refreshes on every change.
 
 ---
 

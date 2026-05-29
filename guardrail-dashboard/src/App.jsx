@@ -663,6 +663,244 @@ function AuditTab() {
   );
 }
 
+// ── Testing tab (Gap 1) ──────────────────────────────────────────────────────
+function TestingTab({ toast }) {
+  const [policies, setPolicies] = useState({});
+  const [selected, setSelected] = useState('');
+  const [report, setReport]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+
+  useEffect(() => {
+    api.listPolicies().then(p => {
+      setPolicies(p);
+      const first = Object.keys(p)[0];
+      if (first) setSelected(first);
+    });
+  }, []);
+
+  const runBuiltin = async () => {
+    if (!selected) return;
+    setLoading(true); setReport(null);
+    try {
+      setReport(await api.runBuiltinTests(selected));
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div>
+      <SectionHead title="Policy Testing" />
+      <Card style={{ marginBottom: 16 }}>
+        <p style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>
+          Run the built-in adversarial smoke suite (safe queries, injection, jailbreak, SQL, code exec) against a policy.
+        </p>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }}>
+            <Select label="Policy" value={selected} onChange={e => setSelected(e.target.value)}>
+              {Object.values(policies).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <Btn variant="primary" onClick={runBuiltin} disabled={loading || !selected}>
+              {loading ? 'Running…' : 'Run test suite'}
+            </Btn>
+          </div>
+        </div>
+      </Card>
+
+      {report && (
+        <Card>
+          <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+            <div><p style={{ fontSize: 11, color: C.sub, margin: 0 }}>Pass rate</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: report.pass_rate === 100 ? C.green : C.amber }}>{report.pass_rate}%</p></div>
+            <div><p style={{ fontSize: 11, color: C.sub, margin: 0 }}>Passed</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: C.green }}>{report.passed}</p></div>
+            <div><p style={{ fontSize: 11, color: C.sub, margin: 0 }}>Failed</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: report.failed ? C.red : C.muted }}>{report.failed}</p></div>
+            <div><p style={{ fontSize: 11, color: C.sub, margin: 0 }}>Duration</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: C.blue }}>{report.duration_ms?.toFixed(0)}ms</p></div>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {report.results.map((r, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', backgroundColor: C.bg, borderRadius: 6 }}>
+                <span style={{ fontSize: 16 }}>{r.passed ? '✅' : '❌'}</span>
+                <span style={{ fontSize: 13, color: C.text, flex: 1 }}>{r.name}</span>
+                {r.risk_score != null && (
+                  <span style={{ fontSize: 12, color: r.risk_score > 0.6 ? C.red : C.muted }}>risk {(r.risk_score * 100).toFixed(0)}%</span>
+                )}
+                {r.failures?.length > 0 && (
+                  <span style={{ fontSize: 11, color: C.red }}>{r.failures.join('; ')}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── Status & Metrics tab (Gaps 8, 9, 11) ─────────────────────────────────────
+function StatusTab({ toast }) {
+  const [status, setStatus]   = useState(null);
+  const [dpStats, setDpStats] = useState(null);
+  const [blockUser, setBlockUser] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const [s, d] = await Promise.all([api.getStatus(), api.dataProviderStats()]);
+      setStatus(s); setDpStats(d);
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
+
+  const addBlock = async () => {
+    if (!blockUser) return;
+    try {
+      await api.updateBlocklist({ users: [blockUser] });
+      toast(`Blocked user: ${blockUser}`, 'ok');
+      setBlockUser(''); load();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  const policies = status ? Object.values(status.policies) : [];
+
+  return (
+    <div>
+      <SectionHead title="Status & Health" action={<Btn onClick={load}>Refresh</Btn>} />
+
+      {status && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 16, marginBottom: 20 }}>
+          <StatCard label="Tracked policies" value={status.total_policies} color={C.blue} />
+          <StatCard label="Healthy" value={status.healthy_policies} sub="zero errors" color={C.green} />
+          <StatCard label="Prometheus" value="/metrics" sub="scrape endpoint live" color={C.purple} />
+        </div>
+      )}
+
+      <Card style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 12px' }}>Per-policy status (OPA status API parity)</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead><tr style={{ borderBottom: `1px solid ${C.border}` }}>
+              {['Policy', 'Backend', 'Checks', 'Blocked', 'Errors', 'Avg', 'p95', 'Last check'].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {policies.length === 0 ? (
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: C.muted }}>No checks recorded yet — run some in Live Test</td></tr>
+              ) : policies.map((p, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                  <td style={{ padding: '8px 12px', color: C.text }}>{p.policy_name}</td>
+                  <td style={{ padding: '8px 12px', color: C.sub }}>{p.backend}</td>
+                  <td style={{ padding: '8px 12px', color: C.sub }}>{p.total_checks}</td>
+                  <td style={{ padding: '8px 12px', color: p.total_blocked ? C.amber : C.sub }}>{p.total_blocked}</td>
+                  <td style={{ padding: '8px 12px', color: p.error_count ? C.red : C.sub }}>{p.error_count}</td>
+                  <td style={{ padding: '8px 12px', color: C.sub }}>{p.avg_latency_ms}ms</td>
+                  <td style={{ padding: '8px 12px', color: p.p95_latency_ms > 100 ? C.amber : C.sub }}>{p.p95_latency_ms}ms</td>
+                  <td style={{ padding: '8px 12px', color: C.muted }}>{p.last_check_at ? new Date(p.last_check_at).toLocaleTimeString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 12px' }}>External data providers (blocklist)</h3>
+        {dpStats && (
+          <p style={{ fontSize: 12, color: C.sub, marginBottom: 12 }}>
+            Providers: {dpStats.providers?.join(', ') || 'none'} · {dpStats.call_count} enrich calls · {dpStats.error_count} errors
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input value={blockUser} onChange={e => setBlockUser(e.target.value)}
+            placeholder="user_id to block"
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text, fontSize: 13, outline: 'none' }} />
+          <Btn variant="primary" onClick={addBlock} disabled={!blockUser}>Add to blocklist</Btn>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── Versions & Bundles tab (Gaps 4, 5) ───────────────────────────────────────
+function VersionsTab({ toast }) {
+  const [policies, setPolicies] = useState({});
+  const [selected, setSelected] = useState('');
+  const [versions, setVersions] = useState([]);
+
+  const loadPolicies = useCallback(async () => {
+    const p = await api.listPolicies();
+    setPolicies(p);
+    const first = Object.keys(p)[0];
+    if (first && !selected) setSelected(first);
+  }, [selected]);
+
+  useEffect(() => { loadPolicies(); }, [loadPolicies]);
+
+  const loadVersions = useCallback(async () => {
+    if (!selected) return;
+    try {
+      const r = await api.listVersions(selected);
+      setVersions(r.versions || []);
+    } catch (e) { setVersions([]); }
+  }, [selected]);
+
+  useEffect(() => { loadVersions(); }, [loadVersions]);
+
+  const rollback = async (snapId) => {
+    if (!window.confirm('Roll back to this snapshot?')) return;
+    try {
+      await api.rollbackPolicy(selected, snapId);
+      toast('Rolled back', 'ok');
+      loadVersions();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  const exportBundle = () => {
+    const base = process.env.REACT_APP_API_URL || '';
+    window.open(`${base}/bundles/export`, '_blank');
+  };
+
+  return (
+    <div>
+      <SectionHead title="Versions & Bundles" action={<Btn variant="primary" onClick={exportBundle}>↓ Export bundle (.tar.gz)</Btn>} />
+
+      <Card style={{ marginBottom: 16 }}>
+        <Select label="Policy" value={selected} onChange={e => setSelected(e.target.value)}>
+          {Object.values(policies).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>
+      </Card>
+
+      <Card>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 12px' }}>Version history (newest first)</h3>
+        {versions.length === 0 ? (
+          <p style={{ color: C.muted, fontSize: 13, textAlign: 'center', padding: 24 }}>
+            No snapshots yet. Snapshots are created automatically on policy create/update.
+          </p>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {versions.map((v, i) => (
+              <div key={v.snapshot_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', backgroundColor: C.bg, borderRadius: 6 }}>
+                <Badge color={i === 0 ? C.green : C.muted}>{i === 0 ? 'current' : `v${versions.length - i}`}</Badge>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, color: C.text, margin: 0 }}>{v.change_reason || 'no reason given'}</p>
+                  <p style={{ fontSize: 11, color: C.muted, margin: 0 }}>
+                    {new Date(v.created_at).toLocaleString()} · by {v.created_by} · {v.snapshot_id.slice(0, 8)}
+                  </p>
+                </div>
+                {i !== 0 && <Btn onClick={() => rollback(v.snapshot_id)}>Roll back</Btn>}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
 // ═════════════════════════════════════════════════════════════════════════════
@@ -670,6 +908,9 @@ const TABS = [
   { id: 'overview',  label: '📊 Overview'  },
   { id: 'checker',   label: '🧪 Live Test'  },
   { id: 'policies',  label: '📋 Policies'  },
+  { id: 'testing',   label: '✅ Testing'   },
+  { id: 'status',    label: '💓 Status'    },
+  { id: 'versions',  label: '🗂 Versions'  },
   { id: 'alerts',    label: '🚨 Alerts'    },
   { id: 'abtests',   label: '🔀 A/B Tests' },
   { id: 'audit',     label: '📜 Audit Log' },
@@ -681,6 +922,7 @@ export default function App() {
   const [dashboard, setDashboard] = useState(null);
   const [health, setHealth]   = useState(null);
   const [toast, setToast]     = useState(null);
+  const [lastEvent, setLastEvent] = useState(null);
 
   const showToast = (msg, type = 'ok') => {
     setToast({ msg, type });
@@ -700,6 +942,26 @@ export default function App() {
     return () => clearInterval(t);
   }, [loadGlobal]);
 
+  // Gap 6 — real-time policy push via Server-Sent Events
+  useEffect(() => {
+    const base = process.env.REACT_APP_API_URL || '';
+    let es;
+    try {
+      es = new EventSource(`${base}/push/events`);
+      es.onmessage = (e) => {
+        try {
+          const ev = JSON.parse(e.data);
+          if (ev.type && ev.type !== 'connected') {
+            setLastEvent(ev);
+            loadGlobal();   // refresh on any policy change
+          }
+        } catch {}
+      };
+      es.onerror = () => { /* browser auto-reconnects */ };
+    } catch {}
+    return () => { if (es) es.close(); };
+  }, [loadGlobal]);
+
   return (
     <div style={{ backgroundColor: C.bg, color: C.text, minHeight: '100vh' }}>
       {/* Header */}
@@ -709,9 +971,16 @@ export default function App() {
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: C.text }}>🛡️ Guardrail Control Center</h1>
             <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>Unified AI safety monitoring across all backends</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: health?.status === 'ok' ? C.green : C.red }} />
-            <span style={{ fontSize: 12, color: C.sub }}>{health?.status === 'ok' ? 'API Online' : 'API Offline'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {lastEvent && (
+              <span style={{ fontSize: 11, color: C.purple, backgroundColor: C.purple + '22', padding: '3px 8px', borderRadius: 4 }}>
+                ⚡ {lastEvent.type}
+              </span>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: health?.status === 'ok' ? C.green : C.red }} />
+              <span style={{ fontSize: 12, color: C.sub }}>{health?.status === 'ok' ? 'API Online' : 'API Offline'}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -734,6 +1003,9 @@ export default function App() {
         {tab === 'overview' && <OverviewTab metrics={metrics} dashboard={dashboard} health={health} />}
         {tab === 'checker'  && <CheckerTab  toast={showToast} />}
         {tab === 'policies' && <PoliciesTab toast={showToast} />}
+        {tab === 'testing'  && <TestingTab  toast={showToast} />}
+        {tab === 'status'   && <StatusTab   toast={showToast} />}
+        {tab === 'versions' && <VersionsTab toast={showToast} />}
         {tab === 'alerts'   && <AlertsTab   toast={showToast} />}
         {tab === 'abtests'  && <ABTestsTab  toast={showToast} />}
         {tab === 'audit'    && <AuditTab />}

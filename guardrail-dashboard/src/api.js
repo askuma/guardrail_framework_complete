@@ -50,4 +50,43 @@ export const api = {
   getBackends:    () => req('GET', '/schema/backends'),
   getRiskCats:    () => req('GET', '/schema/risk-categories'),
   getActions:     () => req('GET', '/schema/actions'),
+
+  // ── Gap 1: Policy testing ───────────────────────────
+  runTests:       (cases) => req('POST', '/test/run', cases),
+  runBuiltinTests: (id)   => req('GET',  `/test/builtin/${id}`),
+
+  // ── Gap 3: Decision logging ─────────────────────────
+  configureDecisionLog: (cfg) => req('POST', '/decision-log/configure', cfg),
+  decisionLogStats:     ()    => req('GET',  '/decision-log/stats'),
+  stopDecisionLog:      ()    => req('POST', '/decision-log/stop'),
+
+  // ── Gap 4: Bundle distribution ──────────────────────
+  bundlePollerStats: () => req('GET', '/bundles/poller/stats'),
+  // export/import use raw fetch (binary) — handled in component
+
+  // ── Gap 5: Versioning ───────────────────────────────
+  listVersions:  (id)         => req('GET',  `/policies/${id}/versions`),
+  rollbackPolicy: (id, snap)  => req('POST', `/policies/${id}/rollback`, { snapshot_id: snap }),
+  versionStats:  ()           => req('GET',  '/versions/stats'),
+
+  // ── Gap 6: Real-time push ───────────────────────────
+  pushStats:     () => req('GET', '/push/stats'),
+  // SSE stream consumed directly via EventSource in App
+
+  // ── Gap 7: Partial evaluation ───────────────────────
+  precompile:    (id, ctx)   => req('POST', `/policies/${id}/precompile`, ctx || {}),
+  evaluate:      (id, body)  => req('POST', `/policies/${id}/evaluate`, body),
+  precompilerStats: ()       => req('GET',  '/precompiler/stats'),
+
+  // ── Gap 9: Status API ───────────────────────────────
+  getStatus:     ()    => req('GET', '/status'),
+  getPolicyStatus: (id) => req('GET', `/status/${id}`),
+
+  // ── Gap 10: WASM scorer ─────────────────────────────
+  scoreText:     (body) => req('POST', '/score/text', body),
+
+  // ── Gap 11: Data providers ──────────────────────────
+  updateBlocklist: (body) => req('POST', '/data-providers/blocklist', body),
+  dataProviderStats: ()   => req('GET',  '/data-providers/stats'),
+  enrichContext:   (ctx)  => req('POST', '/data-providers/enrich', ctx),
 };
