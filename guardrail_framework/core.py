@@ -192,20 +192,32 @@ class NemoGuardrailsBackend(GuardrailBackendInterface):
         result.latency_ms = (time.time() - start) * 1000
         return result
     
-    def validate_tool_call(self, tool_name: str, tool_args: Dict[str, Any], 
+    def validate_tool_call(self, tool_name: str, tool_args: Dict[str, Any],
                           context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.NEMO)
-        
-        # Check tool against policy
-        restricted_tools = self.config.get("restricted_tools", [])
-        if tool_name in restricted_tools:
+
+        # Forbidden tools list — checked from both config and policy rules
+        forbidden = set(self.config.get("restricted_tools", []) +
+                        self.config.get("forbidden_tools", []))
+        allowed   = set(self.config.get("allowed_tools", []))
+
+        blocked = False
+        if forbidden and tool_name in forbidden:
+            blocked = True
+        elif allowed and tool_name not in allowed:
+            blocked = True
+
+        if blocked:
             result.passed = False
             result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
             result.detected_risks.append({
                 "type": RiskCategory.MALICIOUS_TOOL_USE.value,
-                "tool": tool_name
+                "tool": tool_name,
+                "reason": "tool not in allowlist" if allowed else "tool in blocklist"
             })
-        
+
         return result
     
     def apply_policy(self, policy: GuardrailPolicy) -> bool:
@@ -215,13 +227,11 @@ class NemoGuardrailsBackend(GuardrailBackendInterface):
         return False
     
     def _calculate_risk_score(self, text: str) -> float:
-        """Simplified risk scoring - replace with actual model"""
-        risk_keywords = ["delete", "drop", "admin", "root", "execute"]
-        score = 0.0
-        for keyword in risk_keywords:
-            if keyword.lower() in text.lower():
-                score += 0.2
-        return min(score, 1.0)
+        """Delegate to the shared WasmReadyScorer (single source of truth)."""
+        from .opa_gaps import wasm_scorer
+        sensitivity = self.config.get("sensitivity", "medium")
+        score, _ = wasm_scorer.score(text, sensitivity)
+        return score
     
     def _redact_sensitive_info(self, text: str) -> str:
         """Redact PII and sensitive information"""
@@ -238,20 +248,25 @@ class GuardrailsAIBackend(GuardrailBackendInterface):
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.GUARDRAILS_AI)
         start = time.time()
-        
-        # Run validators from config
+
+        # Built-in validators always run
+        base_score = self._score_text(text)
+
+        # Additional validators from config
         validators = self.config.get("validators", [])
+        extra = 0.0
         for validator in validators:
             if not self._run_validator(validator, text):
-                result.passed = False
                 result.detected_risks.append({"type": validator})
-                result.risk_score += 0.3
-        
-        result.risk_score = min(result.risk_score, 1.0)
-        result.passed = result.risk_score < 0.7
+                extra += 0.25
+
+        result.risk_score = min(base_score + extra, 1.0)
+        result.passed = result.risk_score < 0.65
+
         if not result.passed:
             result.action = ActionType.BLOCK
-        
+            result.severity = "critical" if result.risk_score > 0.8 else "warning"
+
         result.latency_ms = (time.time() - start) * 1000
         return result
     
@@ -277,11 +292,18 @@ class GuardrailsAIBackend(GuardrailBackendInterface):
             return True
         return False
     
+    def _score_text(self, text: str) -> float:
+        """Delegate to the shared WasmReadyScorer."""
+        from .opa_gaps import wasm_scorer
+        sensitivity = self.config.get("sensitivity", "medium")
+        score, _ = wasm_scorer.score(text, sensitivity)
+        return score
+
     def _run_validator(self, validator: str, text: str) -> bool:
-        """Run a specific validator"""
+        """Run a named validator"""
         validators = {
-            "toxic_check": lambda t: "badword" not in t.lower(),
-            "pii_check": lambda t: "@" not in t,
+            "toxic_check":        lambda t: "badword" not in t.lower(),
+            "pii_check":          lambda t: "@" not in t,
             "hallucination_check": lambda t: len(t) > 0,
         }
         return validators.get(validator, lambda t: True)(text)
@@ -369,7 +391,7 @@ class GuardrailFramework:
         self.ab_tests: Dict[str, ABTestConfig] = {}
         self.audit_log: List[Dict[str, Any]] = []
         self.metrics: Dict[str, Any] = {}
-        
+        self._version_store: Optional[Any] = None   # set by server.py
         self._initialize_backends()
     
     def _initialize_backends(self):
@@ -383,77 +405,155 @@ class GuardrailFramework:
         self.backends[name] = backend
         self.logger.info(f"Backend registered: {name}")
     
-    def create_policy(self, policy: GuardrailPolicy) -> str:
-        """Create and store a new policy"""
+    def create_policy(self, policy: GuardrailPolicy, created_by: str = "api") -> str:
+        """Create and store a new policy."""
         self.policies[policy.id] = policy
         self.logger.info(f"Policy created: {policy.id} ({policy.name})")
+        # version snapshot
+        if hasattr(self, "_version_store") and self._version_store:
+            self._version_store.save(policy, created_by=created_by, reason="created")
+        # real-time push
+        try:
+            from .bundle import push_channel
+            push_channel.broadcast({"type": "policy_created",
+                                    "policy_id": policy.id,
+                                    "policy_name": policy.name})
+        except Exception:
+            pass
         return policy.id
     
+    def _inject_policy_rules(self, backend, policy):
+        """Push policy.rules into backend config so validators can use them"""
+        if policy.rules:
+            backend.config.update(policy.rules)
+
     def check_input(self, text: str, policy_id: str, context: Optional[Dict] = None) -> GuardrailResult:
-        """Check input against a policy"""
+        """Check input against a policy (fail-closed / default-deny)."""
+        from .testing import fail_closed_result
+        from .opa_gaps import data_registry, status_reporter, prom_metrics
         if policy_id not in self.policies:
-            raise ValueError(f"Policy not found: {policy_id}")
-        
-        policy = self.policies[policy_id]
+            return fail_closed_result(f"Policy not found: {policy_id}")
+
+        policy  = self.policies[policy_id]
         backend = self.backends.get(policy.backend.value)
-        
         if not backend:
-            raise ValueError(f"Backend not configured: {policy.backend.value}")
-        
-        result = backend.check_input(text, context)
+            return fail_closed_result(f"Backend not configured: {policy.backend.value}")
+
+        # Enrich context with external data providers
+        enriched = data_registry.enrich(context or {})
+        self._inject_policy_rules(backend, policy)
+        try:
+            result = backend.check_input(text, enriched)
+        except Exception as exc:
+            self.logger.error(f"Backend error in check_input: {exc}")
+            result = fail_closed_result(str(exc))
+
         self._log_audit(policy_id, "input_check", text, result)
+        status_reporter.record(policy_id, policy.backend.value, result.passed, result.latency_ms)
+        prom_metrics.record_decision(policy_id, policy.backend.value,
+                                     result.action.value, result.passed,
+                                     result.latency_ms, result.risk_score)
         return result
     
     def check_output(self, text: str, policy_id: str, context: Optional[Dict] = None) -> GuardrailResult:
-        """Check output against a policy"""
+        """Check output against a policy (fail-closed / default-deny)."""
+        from .testing import fail_closed_result
+        from .opa_gaps import data_registry, status_reporter, prom_metrics
         if policy_id not in self.policies:
-            raise ValueError(f"Policy not found: {policy_id}")
-        
-        policy = self.policies[policy_id]
+            return fail_closed_result(f"Policy not found: {policy_id}")
+
+        policy  = self.policies[policy_id]
         backend = self.backends.get(policy.backend.value)
-        
         if not backend:
-            raise ValueError(f"Backend not configured: {policy.backend.value}")
-        
-        result = backend.check_output(text, context)
+            return fail_closed_result(f"Backend not configured: {policy.backend.value}")
+
+        enriched = data_registry.enrich(context or {})
+        self._inject_policy_rules(backend, policy)
+        try:
+            result = backend.check_output(text, enriched)
+        except Exception as exc:
+            self.logger.error(f"Backend error in check_output: {exc}")
+            result = fail_closed_result(str(exc))
+
         self._log_audit(policy_id, "output_check", text, result)
+        status_reporter.record(policy_id, policy.backend.value, result.passed, result.latency_ms)
+        prom_metrics.record_decision(policy_id, policy.backend.value,
+                                     result.action.value, result.passed,
+                                     result.latency_ms, result.risk_score)
         return result
     
-    def validate_tool_call(self, policy_id: str, tool_name: str, 
+    def validate_tool_call(self, policy_id: str, tool_name: str,
                           tool_args: Dict[str, Any], context: Optional[Dict] = None) -> GuardrailResult:
-        """Validate an agent tool call"""
+        """Validate an agent tool call (fail-closed / default-deny)."""
+        from .testing import fail_closed_result
+        from .opa_gaps import data_registry, status_reporter, prom_metrics
         if policy_id not in self.policies:
-            raise ValueError(f"Policy not found: {policy_id}")
-        
-        policy = self.policies[policy_id]
+            return fail_closed_result(f"Policy not found: {policy_id}")
+
+        policy  = self.policies[policy_id]
         backend = self.backends.get(policy.backend.value)
-        
         if not backend:
-            raise ValueError(f"Backend not configured: {policy.backend.value}")
-        
-        result = backend.validate_tool_call(tool_name, tool_args, context)
+            return fail_closed_result(f"Backend not configured: {policy.backend.value}")
+
+        enriched = data_registry.enrich(context or {})
+        self._inject_policy_rules(backend, policy)
+        try:
+            result = backend.validate_tool_call(tool_name, tool_args, enriched)
+        except Exception as exc:
+            self.logger.error(f"Backend error in validate_tool_call: {exc}")
+            result = fail_closed_result(str(exc))
+
         self._log_audit(policy_id, "tool_validation", tool_name, result)
+        status_reporter.record(policy_id, policy.backend.value, result.passed, result.latency_ms)
+        prom_metrics.record_decision(policy_id, policy.backend.value,
+                                     result.action.value, result.passed,
+                                     result.latency_ms, result.risk_score)
         return result
     
-    def update_policy(self, policy_id: str, updates: Dict[str, Any]) -> bool:
-        """Update an existing policy"""
+    def update_policy(self, policy_id: str, updates: Dict[str, Any],
+                     updated_by: str = "api", reason: str = "") -> bool:
+        """Update an existing policy (snapshots previous state first)."""
         if policy_id not in self.policies:
             return False
-        
+
         policy = self.policies[policy_id]
+        # snapshot before change
+        if hasattr(self, "_version_store") and self._version_store:
+            self._version_store.save(policy, created_by=updated_by, reason=f"pre-update: {reason}")
+
         for key, value in updates.items():
             if hasattr(policy, key):
                 setattr(policy, key, value)
-        
         policy.updated_at = datetime.utcnow().isoformat()
         self.logger.info(f"Policy updated: {policy_id}")
+
+        # invalidate precompiler cache
+        try:
+            from .opa_gaps import precompiler
+            if precompiler:
+                precompiler.invalidate(policy_id)
+        except Exception:
+            pass
+        # real-time push
+        try:
+            from .bundle import push_channel
+            push_channel.broadcast({"type": "policy_updated",
+                                    "policy_id": policy_id,
+                                    "changes": list(updates.keys())})
+        except Exception:
+            pass
         return True
     
     def delete_policy(self, policy_id: str) -> bool:
-        """Delete a policy"""
+        """Delete a policy and broadcast deletion event."""
         if policy_id in self.policies:
             del self.policies[policy_id]
             self.logger.info(f"Policy deleted: {policy_id}")
+            try:
+                from .bundle import push_channel
+                push_channel.broadcast({"type": "policy_deleted", "policy_id": policy_id})
+            except Exception:
+                pass
             return True
         return False
     
@@ -488,6 +588,7 @@ class GuardrailFramework:
             "action_taken": result.action.value,
             "risk_score": result.risk_score,
             "latency_ms": result.latency_ms,
+            "backend": result.backend_used.value,
             "request_id": result.request_id
         })
         

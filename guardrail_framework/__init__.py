@@ -95,3 +95,42 @@ __all__ = [
     # Helpers
     "initialize",
 ]
+
+# ── OPA gap implementations ──────────────────────────────────
+from .testing import (
+    PolicyTestCase,
+    PolicyTestRunner,
+    TestResult,
+    TestSuiteReport,
+    fail_closed_result,
+)
+from .decision_log import (
+    DecisionEvent,
+    DecisionLogShipper,
+)
+from .bundle import (
+    BundleBuilder,
+    BundleLoader,
+    BundlePoller,
+    BundleMetadata,
+    PolicyVersionStore,
+    PolicySnapshot,
+    PolicyPushChannel,
+    push_channel,
+)
+from .opa_gaps import (
+    PolicyPrecompiler,
+    ResidualQuery,
+    PrometheusMetrics,
+    StatusReporter,
+    PolicyStatus,
+    WasmReadyScorer,
+    DataProvider,
+    StaticBlocklistProvider,
+    HttpDataProvider,
+    DataProviderRegistry,
+    prom_metrics,
+    status_reporter,
+    data_registry,
+    wasm_scorer,
+)

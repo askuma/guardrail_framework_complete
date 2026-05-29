@@ -80,11 +80,10 @@ if _os.path.isdir(_static_dir):
         return HTMLResponse("<h1>Dashboard not found</h1>", status_code=404)
 # ──────────────────────────────────────────────────────────────────────────────
 '''
-    # Insert AFTER all API routes, just before the entry point
-    # This ensures concrete API routes always take priority over the SPA catch-all
+    # Insert just before the health endpoint
     src = src.replace(
-        "# ─── Entry point ──────────────────────────────────────────────────────────────",
-        mount_snippet + "# ─── Entry point ──────────────────────────────────────────────────────────────",
+        "# ─── Health ───",
+        mount_snippet + "# ─── Health ───",
     )
     path.write_text(src)
     print("server.py patched OK")
