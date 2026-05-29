@@ -930,16 +930,33 @@ export default function App() {
   };
 
   const loadGlobal = useCallback(async () => {
+    // Health is checked independently so a failure in metrics/dashboard
+    // never leaves the status indicator stuck.
     try {
-      const [m, d, h] = await Promise.all([api.getMetrics(), api.getDashboard(), api.health()]);
-      setMetrics(m); setDashboard(d); setHealth(h);
+      const h = await api.health();
+      setHealth(h);
+    } catch {
+      setHealth({ status: 'down' });
+    }
+    try {
+      const [m, d] = await Promise.all([api.getMetrics(), api.getDashboard()]);
+      setMetrics(m); setDashboard(d);
     } catch {}
   }, []);
 
   useEffect(() => {
     loadGlobal();
-    const t = setInterval(loadGlobal, 15000);
-    return () => clearInterval(t);
+    // Poll fast (3s) until the API is reachable, then back off to 15s.
+    let interval = 3000;
+    let timer;
+    const tick = async () => {
+      await loadGlobal();
+      timer = setTimeout(tick, interval);
+    };
+    timer = setTimeout(tick, interval);
+    // Switch to slow polling once we've had a successful health check
+    const slow = setInterval(() => { interval = 15000; }, 6000);
+    return () => { clearTimeout(timer); clearInterval(slow); };
   }, [loadGlobal]);
 
   // Gap 6 — real-time policy push via Server-Sent Events
