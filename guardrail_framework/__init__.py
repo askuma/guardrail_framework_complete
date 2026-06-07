@@ -19,8 +19,15 @@ from .core import (
     NemoGuardrailsBackend,
     GuardrailsAIBackend,
     PresidioBackend,
+    LakeraGuardBackend,
+    GAGuardBackend,
     get_framework,
 )
+
+# Auth / persistence / rate-limiting
+from .auth import APIKeyMiddleware, load_api_keys
+from .persistence import PersistenceLayer
+from .rate_limiter import PolicyRateLimiter, policy_rate_limiter
 
 # Compiler exports
 from .compiler import (
@@ -75,13 +82,22 @@ __all__ = [
     "NemoGuardrailsBackend",
     "GuardrailsAIBackend",
     "PresidioBackend",
+    "LakeraGuardBackend",
+    "GAGuardBackend",
     "get_framework",
-    
+
+    # Auth / persistence / rate-limiting
+    "APIKeyMiddleware",
+    "load_api_keys",
+    "PersistenceLayer",
+    "PolicyRateLimiter",
+    "policy_rate_limiter",
+
     # Compiler
     "PolicyCompiler",
     "UnifiedPolicyBuilder",
     "PolicyTemplates",
-    
+
     # Observability
     "MetricsCollector",
     "AlertingSystem",
@@ -91,7 +107,7 @@ __all__ = [
     "AuditLogger",
     "PerformanceMonitor",
     "ObservabilityStack",
-    
+
     # Helpers
     "initialize",
 ]

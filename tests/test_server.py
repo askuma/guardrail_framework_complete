@@ -1,9 +1,15 @@
+import os
 import pytest
-from fastapi.testclient import TestClient
-from guardrail_framework.server import app
-from guardrail_framework.core import ActionType
 
-client = TestClient(app)
+# Must be set before importing the server so the auth middleware sees them.
+os.environ.setdefault("GUARDRAIL_API_KEYS", "test-key")
+os.environ.setdefault("GUARDRAIL_AUTH_ENABLED", "true")
+
+from fastapi.testclient import TestClient  # noqa: E402
+from guardrail_framework.server import app  # noqa: E402
+from guardrail_framework.core import ActionType  # noqa: E402
+
+client = TestClient(app, headers={"X-API-Key": "test-key"})
 
 def test_health_check():
     response = client.get("/health")

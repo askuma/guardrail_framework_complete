@@ -28,10 +28,7 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.9",
-    install_requires=[
-        "typing-extensions>=4.0.0",
-        "dataclasses-json>=0.5.0",
-    ],
+    install_requires=[],
     extras_require={
         "server": [
             "fastapi>=0.104.0",
@@ -52,11 +49,6 @@ setup(
             "black>=23.0.0",
             "flake8>=6.0.0",
             "mypy>=1.0.0",
-        ],
-    },
-    entry_points={
-        "console_scripts": [
-            "guardrail-framework=guardrail_framework.cli:main",
         ],
     },
 )

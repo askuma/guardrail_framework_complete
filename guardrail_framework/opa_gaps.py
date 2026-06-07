@@ -15,7 +15,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("opa_gaps")
@@ -37,7 +37,7 @@ class ResidualQuery:
     compiled_patterns: List[re.Pattern]   # pre-compiled regex list
     risk_weights: Dict[str, float]        # keyword → weight
     threshold: float
-    compiled_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    compiled_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     hits: int = 0
 
 
@@ -368,7 +368,7 @@ class StatusReporter:
         self._data: Dict[str, Dict[str, Any]] = {}
         self._latencies: Dict[str, List[float]] = {}
         self._lock = threading.Lock()
-        self._started_at = datetime.utcnow().isoformat()
+        self._started_at = datetime.now(timezone.utc).isoformat()
 
     def register_policy(self, policy_id: str, policy_name: str,
                         backend: str, enabled: bool,
@@ -404,7 +404,7 @@ class StatusReporter:
                 "bundle_revision": None,
             })
             d["total_checks"] += 1
-            d["last_check_at"] = datetime.utcnow().isoformat()
+            d["last_check_at"] = datetime.now(timezone.utc).isoformat()
             if not passed:
                 d["total_blocked"] += 1
             if error:
@@ -451,7 +451,7 @@ class StatusReporter:
 
         return {
             "started_at": self._started_at,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "total_policies": len(self._data),
             "healthy_policies": sum(
                 1 for pid in self._data

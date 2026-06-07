@@ -4,8 +4,10 @@ REST API for the Guardrail Framework Abstraction Layer
 """
 
 import logging
+import os
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +15,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import sys
-import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from guardrail_framework.core import (
@@ -22,28 +23,70 @@ from guardrail_framework.core import (
 )
 from guardrail_framework.compiler import UnifiedPolicyBuilder, PolicyTemplates, PolicyCompiler
 from guardrail_framework.observability import ObservabilityStack
+from guardrail_framework.auth import APIKeyMiddleware, load_api_keys
+from guardrail_framework.persistence import PersistenceLayer
 
 # ─── App Setup ────────────────────────────────────────────────────────────────
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("guardrail_server")
 
-app = FastAPI(
-    title="Guardrail Framework API",
-    description="Unified guardrail abstraction layer for NeMo, GuardrailsAI, Presidio and more",
-    version="1.0.0",
-)
+# ─── Lifespan: startup + shutdown ─────────────────────────────────────────────
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Load persisted state on startup; flush/stop background workers on shutdown."""
+    # Persistence
+    persistence = PersistenceLayer()
+    framework.set_persistence(persistence)
+    framework.load_from_persistence()
+
+    # Wire the precompiler module-level singleton so backends can use it on the hot path
+    import guardrail_framework.opa_gaps as _gaps
+    _gaps.precompiler = _precompiler
+
+    # Register all loaded policies with the status reporter
+    for _pid, _p in framework.policies.items():
+        status_reporter.register_policy(_pid, _p.name, _p.backend.value, _p.enabled)
+
+    logger.info(
+        f"Server ready | policies={len(framework.policies)} "
+        f"| auth={'ON' if _AUTH_ENABLED else 'OFF'} "
+        f"| db={os.getenv('GUARDRAIL_DB_URL', 'sqlite:///guardrail.db').split('?')[0]}"
+    )
+    yield
+    # Shutdown: stop any running background workers
+    if _decision_shipper:
+        _decision_shipper.stop()
+    if _bundle_poller:
+        _bundle_poller.stop()
+    logger.info("Server shutdown complete.")
+
 
 framework: GuardrailFramework = get_framework()
 observability = ObservabilityStack()
 compiler = PolicyCompiler()
+
+_AUTH_ENABLED = os.getenv("GUARDRAIL_AUTH_ENABLED", "true").lower() not in ("false", "0", "no")
+
+app = FastAPI(
+    title="Guardrail Framework API",
+    description="Unified guardrail abstraction layer for NeMo, GuardrailsAI, Presidio and more",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS — tighten allow_origins via GUARDRAIL_CORS_ORIGINS env var in production
+_cors_origins = [o.strip() for o in os.getenv("GUARDRAIL_CORS_ORIGINS", "*").split(",")]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# API key authentication
+app.add_middleware(APIKeyMiddleware, api_keys=load_api_keys(), enabled=_AUTH_ENABLED)
 
 # ─── Request / Response Models ────────────────────────────────────────────────
 
@@ -94,7 +137,7 @@ class CreateABTestRequest(BaseModel):
 def health():
     return {
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "1.0.0",
         "backends": list(framework.backends.keys()),
         "policies_loaded": len(framework.policies),
@@ -343,16 +386,22 @@ def create_abtest(req: CreateABTestRequest):
 
 
 @app.get("/abtests/{test_id}/assign", tags=["A/B Tests"])
-def assign_abtest(test_id: str):
-    """Get a policy assignment for a given A/B test (random split)."""
+def assign_abtest(test_id: str, user_id: Optional[str] = None):
+    """
+    Get a deterministic policy assignment for a given A/B test.
+    Pass user_id for sticky assignment (same user always gets the same variant).
+    Omit user_id for a random assignment.
+    """
     if test_id not in framework.ab_tests:
         raise HTTPException(status_code=404, detail=f"A/B test not found: {test_id}")
-    policy_id = framework.get_policy_for_abtest(test_id)
+    policy_id = framework.get_policy_for_abtest(test_id, user_id=user_id)
     policy    = framework.policies[policy_id]
     return {
         "test_id": test_id,
         "assigned_policy_id": policy_id,
         "policy_name": policy.name,
+        "user_id": user_id,
+        "sticky": user_id is not None,
     }
 
 # ─── Observability ────────────────────────────────────────────────────────────
@@ -451,10 +500,6 @@ _precompiler = PolicyPrecompiler(framework)
 # Wire a default blocklist provider (users can add more via API)
 _blocklist = StaticBlocklistProvider()
 data_registry.register(_blocklist)
-
-# Register all existing policies with status reporter
-for _pid, _p in framework.policies.items():
-    status_reporter.register_policy(_pid, _p.name, _p.backend.value, _p.enabled)
 
 # ── request models ────────────────────────────────────────────────────────────
 

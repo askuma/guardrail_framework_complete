@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Generator, List, Optional
 from uuid import uuid4
 
@@ -38,7 +38,7 @@ class PolicySnapshot:
     snapshot_id: str = field(default_factory=lambda: str(uuid4()))
     policy_id: str = ""
     version_tag: str = "1.0"
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     created_by: str = "system"
     change_reason: str = ""
     data: Dict[str, Any] = field(default_factory=dict)  # serialised policy
@@ -152,7 +152,7 @@ class PolicyVersionStore:
 class BundleMetadata:
     name: str
     revision: str
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     sha256: str = ""
     policy_count: int = 0
     size_bytes: int = 0
@@ -177,14 +177,14 @@ class BundleBuilder:
     def build(policies: Dict[str, Any],
               bundle_name: str = "guardrail-bundle",
               revision: Optional[str] = None) -> bytes:
-        revision = revision or datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        revision = revision or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             # manifest
             manifest = {
                 "revision": revision,
                 "bundle_name": bundle_name,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
                 "roots": ["policies"],
                 "policy_count": len(policies),
             }
@@ -264,7 +264,7 @@ class BundleLoader:
                     count += 1
 
                 meta.policy_count = count
-                meta.activated_at = datetime.utcnow().isoformat()
+                meta.activated_at = datetime.now(timezone.utc).isoformat()
                 logger.info(f"Bundle activated: {meta.name} rev={meta.revision} ({count} policies)")
 
         except Exception as exc:
@@ -394,7 +394,7 @@ class PolicyPushChannel:
 
     def broadcast(self, event: Dict[str, Any]):
         """Send an event to all connected SSE subscribers."""
-        event.setdefault("timestamp", datetime.utcnow().isoformat())
+        event.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
         dead = []
         with self._lock:
             for q in self._subscribers:

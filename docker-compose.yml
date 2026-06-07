@@ -1,5 +1,9 @@
 version: "3.9"
 
+# Before starting: copy .env.example to .env and set GUARDRAIL_API_KEYS.
+# GUARDRAIL_API_KEYS is required — the server will generate an ephemeral key
+# on every restart if this is unset, which breaks existing clients.
+
 services:
   guardrail:
     build: .
@@ -8,8 +12,15 @@ services:
     ports:
       - "8000:8000"          # API  →  http://localhost:8000
                              # UI   →  http://localhost:8000  (same port)
+    env_file:
+      - .env                 # Copy .env.example → .env and fill in values
     environment:
+      # Store the database inside the named volume so data survives restarts.
+      # This overrides GUARDRAIL_DB_URL from .env when running in Docker.
+      - GUARDRAIL_DB_URL=sqlite:////app/data/guardrail.db
       - LOG_LEVEL=info
+    volumes:
+      - guardrail_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -17,3 +28,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+volumes:
+  guardrail_data:
+    driver: local

@@ -5,7 +5,7 @@ Unified observability for guardrail checks across all backends
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -37,7 +37,7 @@ class Alert:
     severity: AlertSeverity
     title: str
     description: str
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     policy_id: Optional[str] = None
     backend_name: Optional[str] = None
     metric_value: Optional[float] = None
@@ -69,7 +69,7 @@ class MetricsCollector:
                      tags: Optional[Dict[str, str]] = None):
         """Record a metric value"""
         point = MetricPoint(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             value=value,
             policy_id=policy_id,
             backend_name=backend_name,
@@ -83,7 +83,7 @@ class MetricsCollector:
         if metric_name not in self.metrics:
             return []
         
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         return [
             p for p in self.metrics[metric_name]
             if datetime.fromisoformat(p.timestamp) > cutoff
@@ -107,7 +107,7 @@ class MetricsCollector:
     
     def _cleanup_old_metrics(self):
         """Remove metrics older than retention period"""
-        cutoff = datetime.utcnow() - timedelta(hours=self.retention_hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.retention_hours)
         cutoff_iso = cutoff.isoformat()
         
         for metric_name in self.metrics:
@@ -171,7 +171,7 @@ class AlertingSystem:
             
             if summary and summary.get("latest", 0) > threshold:
                 alert = Alert(
-                    id=f"{alert_type}_{datetime.utcnow().timestamp()}",
+                    id=f"{alert_type}_{datetime.now(timezone.utc).timestamp()}",
                     alert_type=AlertType[alert_type.upper()],
                     severity=severity,
                     title=f"Alert: {alert_type}",
@@ -230,7 +230,7 @@ class AuditLogger:
                            backend: str, latency_ms: float):
         """Log a guardrail check for audit purposes"""
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "policy_id": policy_id,
             "action": action,
             "passed": passed,
@@ -247,7 +247,7 @@ class AuditLogger:
     def log_policy_change(self, policy_id: str, action: str, details: Dict[str, Any]):
         """Log policy creation, update, or deletion"""
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "policy_change",
             "policy_id": policy_id,
             "action": action,
@@ -260,7 +260,7 @@ class AuditLogger:
     def log_backend_error(self, backend: str, error: str, context: Optional[Dict] = None):
         """Log backend failures or errors"""
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "backend_error",
             "backend": backend,
             "error": error,
@@ -272,12 +272,15 @@ class AuditLogger:
     
     def get_compliance_report(self, start_date: str, end_date: str) -> Dict[str, Any]:
         """Generate compliance report for date range"""
-        start = datetime.fromisoformat(start_date)
-        end = datetime.fromisoformat(end_date)
-        
+        start = datetime.fromisoformat(start_date).replace(tzinfo=None)
+        end = datetime.fromisoformat(end_date).replace(tzinfo=None)
+
+        def _naive(ts: str) -> datetime:
+            return datetime.fromisoformat(ts).replace(tzinfo=None)
+
         filtered = [
             e for e in self.entries
-            if start <= datetime.fromisoformat(e["timestamp"]) <= end
+            if start <= _naive(e["timestamp"]) <= end
         ]
         
         report = {

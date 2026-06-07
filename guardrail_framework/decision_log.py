@@ -22,7 +22,7 @@ import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -34,7 +34,7 @@ logger = logging.getLogger("DecisionLogShipper")
 class DecisionEvent:
     """A single logged guardrail decision — mirrors OPA decision log schema."""
     decision_id: str = field(default_factory=lambda: str(uuid4()))
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     # policy context
     policy_id: str = ""
@@ -226,7 +226,7 @@ class DecisionLogShipper:
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     if resp.status < 300:
                         self.events_shipped += n
-                        self.last_upload_at = datetime.utcnow().isoformat()
+                        self.last_upload_at = datetime.now(timezone.utc).isoformat()
                         logger.debug(f"Shipped {n} events (attempt {attempt+1})")
                         return
                     logger.warning(f"Sink returned HTTP {resp.status}")

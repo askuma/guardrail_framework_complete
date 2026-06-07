@@ -2,31 +2,71 @@
 
 ## Quick Start (5 minutes)
 
-### 1. Extract Files
-```bash
-# If you downloaded the ZIP
-unzip guardrail_framework.zip
+### 1. Clone and install
 
-# Or clone directly
-git clone <repository-url> guardrail_framework
-cd guardrail_framework
-```
-
-### 2. Install Dependencies
 ```bash
-# Basic installation (minimal dependencies)
+git clone <repository-url> guardrail_framework_complete
+cd guardrail_framework_complete
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Or just install essentials
-pip install python-dataclasses typing-extensions
 ```
 
-### 3. Run Examples
+### 2. Configure environment
+
 ```bash
-python guardrail_framework/examples.py
+cp .env.example .env
 ```
 
-You should see all 8 examples run successfully!
+Open `.env` and set at minimum:
+
+```
+GUARDRAIL_API_KEYS=your-secret-key-here
+```
+
+This key is required for every API call. Without it the server generates a
+new random key on every restart, breaking existing clients.
+
+### 3. Start the API server
+
+```bash
+uvicorn guardrail_framework.server:app --host 0.0.0.0 --port 8000
+```
+
+The server prints confirmation once ready:
+```
+INFO: Server ready | policies=0 | auth=ON | db=sqlite:///guardrail.db
+```
+
+### 4. Verify with curl
+
+```bash
+# Health check — no key needed
+curl http://localhost:8000/health
+
+# Create a policy — requires X-API-Key header
+curl -X POST http://localhost:8000/policies \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key-here" \
+  -d '{
+    "name": "My First Policy",
+    "backend": "guardrails_ai",
+    "risk_categories": ["prompt_injection"],
+    "sensitivity": "medium",
+    "action_on_violation": "block"
+  }'
+
+# Run a guardrail check
+curl -X POST http://localhost:8000/check/input \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key-here" \
+  -d '{"text": "hello world", "policy_id": "<policy_id from above>"}'
+```
+
+Interactive API docs (no key needed in browser):
+```
+http://localhost:8000/docs
+```
 
 ---
 
@@ -34,30 +74,37 @@ You should see all 8 examples run successfully!
 
 ### Option A: Local Development
 ```bash
-cd guardrail_framework
 pip install -e .
+uvicorn guardrail_framework.server:app --reload
 ```
 
-### Option B: Docker
+### Option B: Docker Compose (Recommended for production)
 ```bash
-# Build image
+# 1. Configure environment
+cp .env.example .env
+# Edit .env — set GUARDRAIL_API_KEYS at minimum
+
+# 2. Start (builds image + starts container with persistent volume)
+docker compose up -d
+
+# 3. Check logs
+docker compose logs -f guardrail
+```
+
+Data is stored in a named Docker volume (`guardrail_data`) so it survives
+`docker compose down` / `up` cycles.
+
+### Option C: Docker (single container, manual)
+```bash
+# Set your key in the environment first
+export GUARDRAIL_API_KEYS=your-secret-key-here
+
 docker build -t guardrail-framework:1.0 .
-
-# Run container
-docker run -p 8000:8000 guardrail-framework:1.0
-```
-
-### Option C: Virtual Environment (Recommended)
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install
-pip install -r requirements.txt
-
-# Run tests
-python guardrail_framework/examples.py
+docker run -p 8000:8000 \
+  -e GUARDRAIL_API_KEYS="$GUARDRAIL_API_KEYS" \
+  -v guardrail_data:/app/data \
+  -e GUARDRAIL_DB_URL=sqlite:////app/data/guardrail.db \
+  guardrail-framework:1.0
 ```
 
 ---
@@ -373,16 +420,20 @@ If you see any errors, check the troubleshooting section above.
 
 ## Production Deployment Checklist
 
+- [ ] `.env` created from `.env.example` with real values
+- [ ] `GUARDRAIL_API_KEYS` set to a strong, stable secret (not the ephemeral default)
+- [ ] `GUARDRAIL_CORS_ORIGINS` set to your actual frontend domain (not `*`)
+- [ ] `GUARDRAIL_DB_URL` points to PostgreSQL (not SQLite) for multi-process deployments
 - [ ] Dependencies installed: `pip install -r requirements.txt`
-- [ ] Framework imports successfully: `python verify_installation.py`
-- [ ] Examples run: `python guardrail_framework/examples.py`
-- [ ] Documentation reviewed: `README.md` and `QUICK_REFERENCE.md`
-- [ ] Policies created for your use case
-- [ ] Monitoring set up with `ObservabilityStack`
-- [ ] Docker image built (if using containers)
-- [ ] Kubernetes manifests prepared (if using K8s)
-- [ ] Team trained on framework features
-- [ ] Ready to deploy!
+- [ ] Tests pass: `pytest tests/ -v`
+- [ ] Server starts and `/health` returns `200`
+- [ ] API key works: `curl -H "X-API-Key: <key>" http://localhost:8000/policies`
+- [ ] Policies created and checked: `POST /policies`, `POST /check/input`
+- [ ] Docker image built and health check passes (if using containers)
+- [ ] Database volume mounted so data survives restarts (Docker: `guardrail_data` volume)
+- [ ] Reverse proxy (nginx/Caddy) in front of uvicorn — never expose uvicorn directly
+- [ ] `/metrics/prometheus` endpoint accessible to your Prometheus scraper
+- [ ] Escalation webhook or SMTP configured if using `action_on_violation: escalate`
 
 ---
 
