@@ -1,5 +1,5 @@
 """
-SQLAlchemy persistence layer for policies, audit log, and AB tests.
+SQLAlchemy persistence layer for policies, audit log, AB tests, and blocklist.
 
 DB_URL env var controls the backend (defaults to SQLite for development).
 Set DB_URL=postgresql://user:pass@host/db for production.
@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Float, Integer, String, Text, create_engine,
-    event,
+    Boolean, Column, DateTime, Float, Integer, String, Text, UniqueConstraint,
+    create_engine, event, select, delete as sa_delete,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -61,6 +61,19 @@ class ABTestRecord(Base):
     data = Column(Text, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     deleted = Column(Boolean, default=False)
+
+
+class BlocklistRecord(Base):
+    __tablename__ = "blocklist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entry_type = Column(String(16), nullable=False, index=True)  # "user", "ip", "keyword"
+    value = Column(String(512), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("entry_type", "value", name="uq_blocklist_type_value"),
+    )
 
 
 def _sqlite_wal(dbapi_con, _):
@@ -127,6 +140,13 @@ class PersistenceLayer:
             if rec:
                 rec.deleted = True
 
+    def load_policy(self, policy_id: str) -> Optional[Dict[str, Any]]:
+        with self._session() as s:
+            rec = s.get(PolicyRecord, policy_id)
+            if rec and not rec.deleted:
+                return json.loads(rec.data)
+            return None
+
     def load_all_policies(self) -> List[Dict[str, Any]]:
         with self._session() as s:
             records = s.query(PolicyRecord).filter(PolicyRecord.deleted == False).all()
@@ -178,3 +198,36 @@ class PersistenceLayer:
         with self._session() as s:
             records = s.query(ABTestRecord).filter(ABTestRecord.deleted == False).all()
             return [json.loads(r.data) for r in records]
+
+    # ── Blocklist ──────────────────────────────────────────────────
+
+    def save_blocklist_entry(self, entry_type: str, value: str):
+        """Add a user/ip/keyword to the persistent blocklist (idempotent)."""
+        with self._session() as s:
+            existing = s.execute(
+                select(BlocklistRecord).where(
+                    BlocklistRecord.entry_type == entry_type,
+                    BlocklistRecord.value == value,
+                )
+            ).scalar_one_or_none()
+            if not existing:
+                s.add(BlocklistRecord(entry_type=entry_type, value=value))
+
+    def delete_blocklist_entry(self, entry_type: str, value: str):
+        """Remove a specific entry from the persistent blocklist."""
+        with self._session() as s:
+            s.execute(
+                sa_delete(BlocklistRecord).where(
+                    BlocklistRecord.entry_type == entry_type,
+                    BlocklistRecord.value == value,
+                )
+            )
+
+    def load_blocklist(self) -> Dict[str, List[str]]:
+        """Return all blocklist entries grouped by type (user, ip, keyword)."""
+        with self._session() as s:
+            records = s.query(BlocklistRecord).all()
+            result: Dict[str, List[str]] = {}
+            for r in records:
+                result.setdefault(r.entry_type, []).append(r.value)
+            return result

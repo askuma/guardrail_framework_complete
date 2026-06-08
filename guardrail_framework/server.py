@@ -9,17 +9,18 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from guardrail_framework.core import (
     GuardrailFramework, GuardrailPolicy, GuardrailBackend,
-    RiskCategory, ActionType, ABTestConfig, get_framework
+    RiskCategory, ActionType, ABTestConfig, get_framework,
+    _validate_external_url,
 )
 from guardrail_framework.compiler import UnifiedPolicyBuilder, PolicyTemplates, PolicyCompiler
 from guardrail_framework.observability import ObservabilityStack
@@ -85,8 +86,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API key authentication
-app.add_middleware(APIKeyMiddleware, api_keys=load_api_keys(), enabled=_AUTH_ENABLED)
+# API key authentication — stored at module level so route handlers can reuse it
+_api_keys = load_api_keys()
+app.add_middleware(APIKeyMiddleware, api_keys=_api_keys, enabled=_AUTH_ENABLED)
 
 # ─── Request / Response Models ────────────────────────────────────────────────
 
@@ -521,6 +523,11 @@ class DecisionLogConfig(_BM):
     flush_interval_secs: float = 10.0
     auth_token: Optional[str] = None
 
+    @field_validator("sink_url")
+    @classmethod
+    def _check_sink_url(cls, v: str) -> str:
+        return _validate_external_url(v)
+
 class BlocklistUpdateRequest(_BM):
     users:    Optional[List[str]] = None
     ips:      Optional[List[str]] = None
@@ -533,6 +540,11 @@ class BundlePollerConfig(_BM):
     bundle_url: str
     interval_secs: float = 30.0
     auth_token: Optional[str] = None
+
+    @field_validator("bundle_url")
+    @classmethod
+    def _check_bundle_url(cls, v: str) -> str:
+        return _validate_external_url(v)
 
 _decision_shipper: Optional[DecisionLogShipper] = None
 _bundle_poller:    Optional[BundlePoller]        = None
@@ -783,15 +795,20 @@ def version_stats():
 
 @app.get("/push/events", tags=["Real-time Push"],
          response_class=StreamingResponse)
-def policy_events():
+def policy_events(api_key: str = Query(..., description="API key (browsers cannot send custom headers on EventSource)")):
     """
     Server-Sent Events stream. Connect once; receive all policy changes in real time.
 
-    JavaScript example::
+    Browsers must pass the API key as a query parameter because the native
+    EventSource API does not support custom request headers::
 
-        const es = new EventSource("/push/events");
+        const es = new EventSource("/push/events?api_key=YOUR_KEY");
         es.onmessage = e => console.log(JSON.parse(e.data));
     """
+    if not _AUTH_ENABLED:
+        pass  # auth disabled globally — allow through
+    elif api_key not in _api_keys:
+        raise HTTPException(status_code=401, detail="Missing or invalid API key.")
     return StreamingResponse(
         push_channel.subscribe(),
         media_type="text/event-stream",

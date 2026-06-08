@@ -27,7 +27,16 @@ GUARDRAIL_API_KEYS=your-secret-key-here
 This key is required for every API call. Without it the server generates a
 new random key on every restart, breaking existing clients.
 
-### 3. Start the API server
+### 3. Apply database migrations
+
+```bash
+alembic upgrade head
+```
+
+This creates the `policies`, `audit_log`, and `ab_tests` tables. Re-run after
+any future upgrade to pick up schema changes.
+
+### 4. Start the API server
 
 ```bash
 uvicorn guardrail_framework.server:app --host 0.0.0.0 --port 8000
@@ -418,13 +427,190 @@ If you see any errors, check the troubleshooting section above.
 
 ---
 
+## Multi-Instance / Horizontal Scaling
+
+Running more than one replica requires two changes so that state is shared
+across all processes.
+
+### PostgreSQL (shared policy store)
+
+```bash
+# .env
+GUARDRAIL_DB_URL=postgresql://user:pass@db-host:5432/guardrail
+```
+
+Each replica loads policies from PostgreSQL on startup. If a policy is
+created on replica A, replica B discovers it on the next request (the
+`_get_policy()` fallback fetches it from the DB and caches it locally).
+
+### Redis (shared rate limiter)
+
+```bash
+# Install the optional redis driver
+pip install "redis>=5.0.0"
+
+# .env
+GUARDRAIL_REDIS_URL=redis://redis-host:6379/0
+```
+
+With `GUARDRAIL_REDIS_URL` set, `PolicyRateLimiter` uses a Redis
+fixed-window counter so rate limits are enforced consistently across every
+replica. Without Redis, each process maintains its own in-process bucket
+(limits are per-replica, not global).
+
+Docker Compose example adding Redis:
+
+```yaml
+services:
+  guardrail:
+    image: guardrail-framework:1.0
+    environment:
+      - GUARDRAIL_API_KEYS=your-key
+      - GUARDRAIL_DB_URL=postgresql://user:pass@db:5432/guardrail
+      - GUARDRAIL_REDIS_URL=redis://redis:6379/0
+    depends_on: [db, redis]
+
+  db:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: user, POSTGRES_PASSWORD: pass, POSTGRES_DB: guardrail}
+    volumes: [pg_data:/var/lib/postgresql/data]
+
+  redis:
+    image: redis:7-alpine
+    volumes: [redis_data:/data]
+
+volumes: {pg_data: {}, redis_data: {}}
+```
+
+---
+
+## TLS / HTTPS
+
+Never expose uvicorn directly on the internet. Put a TLS-terminating reverse
+proxy in front.
+
+### nginx example
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name guardrail.example.com;
+
+    ssl_certificate     /etc/ssl/certs/guardrail.crt;
+    ssl_certificate_key /etc/ssl/private/guardrail.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # Required for SSE (dashboard live feed)
+        proxy_buffering    off;
+        proxy_cache        off;
+        proxy_read_timeout 3600s;
+    }
+}
+server {
+    listen 80;
+    server_name guardrail.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+### Caddy (automatic HTTPS via Let's Encrypt)
+
+```caddy
+guardrail.example.com {
+    reverse_proxy localhost:8000 {
+        flush_interval -1   # disable buffering for SSE
+    }
+}
+```
+
+---
+
+## Persistent Blocklist (DatabaseBlocklistProvider)
+
+`StaticBlocklistProvider` holds entries in memory and loses them on restart.
+Use `DatabaseBlocklistProvider` for entries that must survive restarts and be
+consistent across replicas.
+
+```python
+from guardrail_framework.persistence import PersistenceLayer
+from guardrail_framework.opa_gaps import data_registry, DatabaseBlocklistProvider
+
+db = PersistenceLayer()          # reads GUARDRAIL_DB_URL automatically
+bl = DatabaseBlocklistProvider(db, ttl_secs=30)
+data_registry.register(bl)
+
+# Add entries — persisted to the database immediately:
+bl.add_user("bad-actor-user-id")
+bl.add_ip("203.0.113.42")
+bl.add_keyword("drop table")
+
+# Remove entries:
+bl.remove_user("bad-actor-user-id")
+```
+
+Wire this up in `server.py` after the persistence layer is initialised (inside
+the `lifespan` handler) so it is registered before the first request arrives.
+
+Run the migration to create the `blocklist` table:
+```bash
+alembic upgrade head
+```
+
+---
+
+## GA Guard Backend
+
+`GAGuardBackend` is a generic HTTP guardrail client that POSTs to any REST
+endpoint you operate. It is not tied to a specific vendor.
+
+**Expected request (sent by the framework):**
+```json
+POST <GA_GUARD_API_URL>
+Content-Type: application/json
+Authorization: Bearer <GA_GUARD_API_KEY>   (omitted if key not set)
+
+{"text": "…user message…", "context": {"user_id": "u1", "sensitivity": "medium"}}
+```
+
+**Expected response:**
+```json
+{"passed": true, "risk_score": 0.12, "risks": []}
+```
+
+Or for a blocked request:
+```json
+{"passed": false, "risk_score": 0.91, "risks": [{"type": "prompt_injection", "confidence": 0.91}]}
+```
+
+Set the environment variables:
+```bash
+GA_GUARD_API_URL=https://your-guardrail-service.example.com/check
+GA_GUARD_API_KEY=your-service-api-key   # optional
+```
+
+The URL must be `https://` and must not point to a private IP range (enforced
+at runtime). Without `GA_GUARD_API_URL`, the backend falls back to the built-in
+regex scorer.
+
+---
+
 ## Production Deployment Checklist
 
 - [ ] `.env` created from `.env.example` with real values
 - [ ] `GUARDRAIL_API_KEYS` set to a strong, stable secret (not the ephemeral default)
 - [ ] `GUARDRAIL_CORS_ORIGINS` set to your actual frontend domain (not `*`)
-- [ ] `GUARDRAIL_DB_URL` points to PostgreSQL (not SQLite) for multi-process deployments
+- [ ] `GUARDRAIL_DB_URL` points to PostgreSQL (not SQLite) for multi-replica deployments
+- [ ] `GUARDRAIL_REDIS_URL` set to a Redis instance for cross-replica rate limiting (required for multi-instance)
+- [ ] At least one real guardrail SDK installed (`guardrails-ai`, `nemoguardrails`, `presidio-analyzer`, or `LAKERA_GUARD_API_KEY` / `GA_GUARD_API_URL` set)
 - [ ] Dependencies installed: `pip install -r requirements.txt`
+- [ ] Database migrations applied: `alembic upgrade head` (creates `policies`, `audit_log`, `ab_tests`, `blocklist` tables)
 - [ ] Tests pass: `pytest tests/ -v`
 - [ ] Server starts and `/health` returns `200`
 - [ ] API key works: `curl -H "X-API-Key: <key>" http://localhost:8000/policies`

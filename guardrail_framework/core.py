@@ -3,10 +3,13 @@ Guardrail Framework Abstraction Layer
 Unified interface for multiple guardrail backends (NeMo, GuardrailsAI, Presidio, Lakera, GA Guard)
 """
 
+import asyncio as _asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 import os
+import re as _re
 import time
 import urllib.request
 from abc import ABC, abstractmethod
@@ -14,14 +17,15 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from uuid import uuid4
 
-# ── Optional Presidio SDK ──────────────────────────────────────────────────────
-# Use importlib so static analysers don't flag a missing-module error for an
-# intentionally optional dependency.
+# ── Optional SDKs — detected at import time, used lazily ─────────────────────
 import importlib
 import importlib.util as _ilu
 
+_NEMO_SDK: bool = _ilu.find_spec("nemoguardrails") is not None
+_GUARDRAILSAI_SDK: bool = _ilu.find_spec("guardrails") is not None
 _PRESIDIO_SDK: bool = (
     _ilu.find_spec("presidio_analyzer") is not None
     and _ilu.find_spec("presidio_anonymizer") is not None
@@ -39,8 +43,62 @@ if _PRESIDIO_SDK:
     except Exception:
         _PRESIDIO_SDK = False
 
+_log_core = logging.getLogger("core")
+_log_core.info("SDK availability — nemo:%s guardrails_ai:%s presidio:%s",
+               _NEMO_SDK, _GUARDRAILSAI_SDK, _PRESIDIO_SDK)
+
+# Pattern used to detect when NeMo rails have blocked a response.
+# NeMo returns its configured refusal text; we match common patterns.
+_NEMO_REFUSAL_RE = _re.compile(
+    r"I('m| am) (sorry|unable|not able to)|"
+    r"(cannot|can't|won't|will not) (help|assist|answer|discuss|provide)|"
+    r"(not allowed|not permitted|off.?limits|outside my)|"
+    r"I (cannot|can't) (do|engage|talk about)",
+    _re.IGNORECASE,
+)
+
 # Sensitivity → score threshold mapping (shared by all backends)
 _THRESHOLDS: Dict[str, float] = {"low": 0.80, "medium": 0.65, "high": 0.45}
+
+_PRIVATE_NETS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),   # link-local / cloud metadata
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _validate_external_url(url: str) -> str:
+    """
+    Reject URLs that are not safe to fetch from the server side.
+
+    Rules:
+    - Only https:// is permitted (blocks file://, gopher://, ftp://, etc.)
+    - Bare IP literals that fall in private/loopback/link-local ranges are blocked.
+    - Hostnames are not resolved here; restrict outbound egress at the network level
+      if DNS-rebinding is a concern in your environment.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(
+            f"Only https:// URLs are permitted for external backends; got scheme {parsed.scheme!r}. "
+            "Use the GA_GUARD_API_URL environment variable to set a pre-approved URL."
+        )
+    host = parsed.hostname or ""
+    try:
+        addr = ipaddress.ip_address(host)
+        if any(addr in net for net in _PRIVATE_NETS):
+            raise ValueError(
+                f"URLs targeting private or link-local IP ranges are not permitted: {host}"
+            )
+    except ValueError as exc:
+        if "permitted" in str(exc):
+            raise
+        # host is a domain name, not a bare IP — allowed
+    return url
 
 
 class GuardrailBackend(str, Enum):
@@ -206,63 +264,141 @@ class GuardrailBackendInterface(ABC):
             self.config.get("restricted_tools", []) +
             self.config.get("forbidden_tools", [])
         )
-        allowed = set(self.config.get("allowed_tools", []))
 
         if forbidden and tool_name in forbidden:
             return True, "tool in blocklist"
-        if allowed and tool_name not in allowed:
-            return True, "tool not in allowlist"
+
+        # Distinguish absent (no allowlist) from present-but-empty (deny all).
+        # Using `if allowed` would treat [] as falsy and skip the check, allowing
+        # an attacker to bypass the allowlist by PATCHing allowed_tools to [].
+        allowed_tools_config = self.config.get("allowed_tools")
+        if allowed_tools_config is not None:
+            if tool_name not in set(allowed_tools_config):
+                return True, "tool not in allowlist"
+
         return False, ""
 
 
 # ── NeMo Guardrails backend ────────────────────────────────────────────────────
 
 class NemoGuardrailsBackend(GuardrailBackendInterface):
-    """NVIDIA NeMo Guardrails backend implementation"""
+    """
+    NVIDIA NeMo Guardrails backend.
+
+    When `nemoguardrails` is installed AND the policy has `nemo_colang` set,
+    real NeMo rails are applied via `LLMRails.generate_async`.
+
+    When the SDK is not installed, a WARNING is logged on every call and the
+    built-in regex risk scorer is used as a fallback so the system stays
+    operational. Install the SDK to get real NeMo behaviour:
+
+        pip install nemoguardrails
+    """
+
+    def _nemo_check(self, messages: List[Dict]) -> Tuple[bool, float, List[Dict]]:
+        """
+        Run NeMo rails on `messages`. Returns (passed, risk_score, detected).
+        Raises RuntimeError if the SDK is unavailable.
+        """
+        colang = self.config.get("colang_policy", "")
+        nemo_yaml = self.config.get("nemo_yaml", "")
+        if not (colang or nemo_yaml):
+            self.logger.warning(
+                "NeMo backend: SDK is installed but no colang/yaml policy is configured. "
+                "Set nemo_colang on the policy. Falling back to regex scorer."
+            )
+            return None, None, None  # sentinel → caller uses fallback
+
+        _ng = importlib.import_module("nemoguardrails")
+        rails_cfg = _ng.RailsConfig.from_content(
+            colang_content=colang,
+            yaml_content=nemo_yaml,
+        )
+        rails = _ng.LLMRails(rails_cfg)
+        response = _asyncio.run(rails.generate_async(messages=messages))
+        blocked = bool(_NEMO_REFUSAL_RE.search(response))
+        if blocked:
+            return False, 0.9, [{"type": "nemo_rail_triggered", "response": response[:200]}]
+        return True, 0.0, []
+
+    def _sdk_warning(self):
+        self.logger.warning(
+            "NeMo backend: nemoguardrails SDK not installed — using regex scorer as fallback. "
+            "Install with: pip install nemoguardrails  "
+            "(NeMo also requires an LLM provider, e.g. pip install openai)"
+        )
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.NEMO)
         start = time.time()
+        try:
+            passed, risk_score, detected = None, None, None
+            if _NEMO_SDK:
+                passed, risk_score, detected = self._nemo_check(
+                    [{"role": "user", "content": text}]
+                )
+            else:
+                self._sdk_warning()
 
-        risk_score, detected = self._score_text(text, context)
-        result.risk_score = risk_score
-        result.passed = risk_score < self._threshold()
+            if passed is None:  # SDK unavailable or no colang — use regex
+                risk_score, detected = self._score_text(text, context)
+                passed = risk_score < self._threshold()
 
-        if not result.passed:
-            result.action = ActionType.BLOCK
-            result.severity = "critical" if risk_score > 0.8 else "warning"
-            result.detected_risks = detected or [
-                {"type": RiskCategory.PROMPT_INJECTION.value, "confidence": round(risk_score, 3)}
-            ]
-
+            result.risk_score = risk_score
+            result.passed = passed
+            if not passed:
+                result.action = ActionType.BLOCK
+                result.severity = "critical" if risk_score > 0.8 else "warning"
+                result.detected_risks = detected or [
+                    {"type": RiskCategory.PROMPT_INJECTION.value, "confidence": round(risk_score, 3)}
+                ]
+        except Exception as exc:
+            self.logger.error(f"NeMo check_input error: {exc}")
+            from .testing import fail_closed_result
+            return fail_closed_result(f"NeMo error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
         return result
 
     def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.NEMO)
         start = time.time()
-
-        risk_score, detected = self._score_text(text, context)
-        result.risk_score = risk_score
-        result.passed = risk_score < self._threshold()
         result.original_text = text
+        try:
+            passed, risk_score, detected = None, None, None
+            if _NEMO_SDK:
+                # NeMo checks output by treating it as an assistant message
+                passed, risk_score, detected = self._nemo_check(
+                    [{"role": "assistant", "content": text}]
+                )
+            else:
+                self._sdk_warning()
 
-        if not result.passed:
-            result.action = ActionType.REDACT
-            result.severity = "critical" if risk_score > 0.8 else "warning"
-            result.detected_risks = detected
-            result.modified_text = self._redact_sensitive_info(text)
-        else:
-            result.modified_text = text
+            if passed is None:
+                risk_score, detected = self._score_text(text, context)
+                passed = risk_score < self._threshold()
 
+            result.risk_score = risk_score
+            result.passed = passed
+            if not passed:
+                result.action = ActionType.REDACT
+                result.severity = "critical" if risk_score > 0.8 else "warning"
+                result.detected_risks = detected
+                result.modified_text = self._redact_sensitive_info(text)
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error(f"NeMo check_output error: {exc}")
+            from .testing import fail_closed_result
+            return fail_closed_result(f"NeMo error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
         return result
 
     def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
                            _context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.NEMO)
+        if not _NEMO_SDK:
+            self._sdk_warning()
         blocked, reason = self._check_tools(tool_name)
-
         if blocked:
             result.passed = False
             result.action = ActionType.BLOCK
@@ -282,79 +418,144 @@ class NemoGuardrailsBackend(GuardrailBackendInterface):
         return False
 
     def _redact_sensitive_info(self, text: str) -> str:
-        import re
-        text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[SSN]', text)
-        text = re.sub(r'\b\d{16}\b', '[CARD]', text)
-        text = re.sub(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b', '[EMAIL]', text)
+        text = _re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[SSN]', text)
+        text = _re.sub(r'\b\d{16}\b', '[CARD]', text)
+        text = _re.sub(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b', '[EMAIL]', text)
         return text
 
 
 # ── GuardrailsAI backend ───────────────────────────────────────────────────────
 
 class GuardrailsAIBackend(GuardrailBackendInterface):
-    """GuardrailsAI framework backend implementation"""
+    """
+    GuardrailsAI framework backend.
+
+    When `guardrails-ai` is installed, checks run through a real `Guard` object.
+    Hub validators named in `policy.rules.validators` (e.g. `["DetectPII"]`) are
+    loaded from `guardrails.hub` when available.
+
+    When the SDK is not installed, a WARNING is logged on every call and the
+    built-in regex risk scorer is used as a fallback. Install the SDK to get
+    real GuardrailsAI behaviour:
+
+        pip install guardrails-ai
+    """
+
+    def _sdk_warning(self):
+        self.logger.warning(
+            "GuardrailsAI backend: guardrails-ai SDK not installed — "
+            "using regex scorer as fallback. Install with: pip install guardrails-ai"
+        )
+
+    def _build_guard(self, validator_names: List[str]):
+        """Build a Guard with any hub validators that are available."""
+        _g = importlib.import_module("guardrails")
+        guard = _g.Guard()
+        loaded: List[str] = []
+        for name in validator_names:
+            try:
+                hub = importlib.import_module("guardrails.hub")
+                cls = getattr(hub, name, None)
+                if cls:
+                    guard = guard.use(cls(on_fail="noop"))
+                    loaded.append(name)
+            except (ImportError, AttributeError):
+                pass
+        if validator_names and not loaded:
+            self.logger.warning(
+                "GuardrailsAI: none of the requested validators (%s) were found in "
+                "guardrails.hub. Run: guardrails hub install <validator>. "
+                "Falling back to regex scorer for safety.",
+                validator_names,
+            )
+        elif loaded:
+            self.logger.debug("GuardrailsAI: loaded hub validators %s", loaded)
+        return guard, bool(loaded)
+
+    def _guardrails_check(self, text: str, validator_names: List[str]) -> Tuple[bool, float, List[Dict]]:
+        """
+        Run text through the real guardrails-ai Guard.
+        Returns (passed, risk_score, detected).
+        """
+        guard, hub_loaded = self._build_guard(validator_names)
+        outcome = guard.validate(text)
+        passed = outcome.validation_passed
+        detected: List[Dict] = []
+        if not passed:
+            detected = [{"type": "guardrails_validation",
+                         "error": str(getattr(outcome, "error", ""))[:200]}]
+        risk_score = 0.0 if passed else 0.8
+        return passed, risk_score, detected
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.GUARDRAILS_AI)
         start = time.time()
+        try:
+            validators = self.config.get("validators", [])
+            if _GUARDRAILSAI_SDK:
+                passed, sdk_score, sdk_detected = self._guardrails_check(text, validators)
+            else:
+                self._sdk_warning()
+                passed, sdk_score, sdk_detected = True, 0.0, []
 
-        risk_score, detected = self._score_text(text, context)
+            # Always also run the regex scorer for defence in depth
+            base_score, base_detected = self._score_text(text, context)
+            risk_score = max(sdk_score, base_score)
+            detected = sdk_detected + base_detected
+            passed = passed and risk_score < self._threshold()
 
-        # Run named validators from config on top of base score
-        validators = self.config.get("validators", [])
-        extra = 0.0
-        for validator in validators:
-            if not self._run_validator(validator, text):
-                result.detected_risks.append({"type": validator})
-                extra += 0.25
-
-        result.risk_score = min(risk_score + extra, 1.0)
-        result.passed = result.risk_score < self._threshold()
-        result.detected_risks.extend(detected)
-
-        if not result.passed:
-            result.action = ActionType.BLOCK
-            result.severity = "critical" if result.risk_score > 0.8 else "warning"
-
+            result.risk_score = risk_score
+            result.passed = passed
+            result.detected_risks = detected
+            if not passed:
+                result.action = ActionType.BLOCK
+                result.severity = "critical" if risk_score > 0.8 else "warning"
+        except Exception as exc:
+            self.logger.error(f"GuardrailsAI check_input error: {exc}")
+            from .testing import fail_closed_result
+            return fail_closed_result(f"GuardrailsAI error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
         return result
 
     def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
-        """Actually score the output — previously this always returned passed=True."""
         result = GuardrailResult(backend_used=GuardrailBackend.GUARDRAILS_AI)
         start = time.time()
-
         result.original_text = text
+        try:
+            validators = self.config.get("output_validators", self.config.get("validators", []))
+            if _GUARDRAILSAI_SDK:
+                passed, sdk_score, sdk_detected = self._guardrails_check(text, validators)
+            else:
+                self._sdk_warning()
+                passed, sdk_score, sdk_detected = True, 0.0, []
 
-        risk_score, detected = self._score_text(text, context)
+            base_score, base_detected = self._score_text(text, context)
+            risk_score = max(sdk_score, base_score)
+            detected = sdk_detected + base_detected
+            passed = passed and risk_score < self._threshold()
 
-        output_validators = self.config.get("output_validators", self.config.get("validators", []))
-        extra = 0.0
-        for validator in output_validators:
-            if not self._run_validator(validator, text):
-                result.detected_risks.append({"type": f"output_{validator}"})
-                extra += 0.25
-
-        result.risk_score = min(risk_score + extra, 1.0)
-        result.passed = result.risk_score < self._threshold()
-        result.detected_risks.extend(detected)
-
-        if result.passed:
-            result.modified_text = text
-        else:
-            result.action = ActionType.REDACT
-            result.severity = "critical" if result.risk_score > 0.8 else "warning"
-            result.modified_text = self._redact_output(text)
-
+            result.risk_score = risk_score
+            result.passed = passed
+            result.detected_risks = detected
+            if passed:
+                result.modified_text = text
+            else:
+                result.action = ActionType.REDACT
+                result.severity = "critical" if risk_score > 0.8 else "warning"
+                result.modified_text = self._redact_output(text)
+        except Exception as exc:
+            self.logger.error(f"GuardrailsAI check_output error: {exc}")
+            from .testing import fail_closed_result
+            return fail_closed_result(f"GuardrailsAI error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
         return result
 
     def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
                            _context: Optional[Dict] = None) -> GuardrailResult:
-        """Previously always passed — now actually enforces allowlist/blocklist."""
         result = GuardrailResult(backend_used=GuardrailBackend.GUARDRAILS_AI)
+        if not _GUARDRAILSAI_SDK:
+            self._sdk_warning()
         blocked, reason = self._check_tools(tool_name)
-
         if blocked:
             result.passed = False
             result.action = ActionType.BLOCK
@@ -372,14 +573,6 @@ class GuardrailsAIBackend(GuardrailBackendInterface):
             self.config["policy_yaml"] = policy.guardrails_yaml
             return True
         return False
-
-    def _run_validator(self, validator: str, text: str) -> bool:
-        validators = {
-            "toxic_check":         lambda t: "badword" not in t.lower(),
-            "pii_check":           lambda t: "@" not in t,
-            "hallucination_check": lambda t: len(t) > 0,
-        }
-        return validators.get(validator, lambda t: True)(text)
 
     def _redact_output(self, text: str) -> str:
         from .actions import rewrite_text
@@ -529,7 +722,7 @@ class LakeraGuardBackend(GuardrailBackendInterface):
     _OUTPUT_URL = "https://api.lakera.ai/v1/prompt_injection"
 
     def _api_key(self) -> Optional[str]:
-        return self.config.get("api_key") or os.getenv("LAKERA_GUARD_API_KEY", "").strip() or None
+        return os.getenv("LAKERA_GUARD_API_KEY", "").strip() or self.config.get("api_key") or None
 
     def _call_api(self, url: str, text: str, role: str = "user") -> Tuple[bool, float, List[Dict]]:
         """Returns (flagged, risk_score, detected_risks)."""
@@ -638,14 +831,17 @@ class GAGuardBackend(GuardrailBackendInterface):
     """
 
     def _api_url(self) -> Optional[str]:
-        return self.config.get("api_url") or os.getenv("GA_GUARD_API_URL", "").strip() or None
+        url = self.config.get("api_url") or os.getenv("GA_GUARD_API_URL", "").strip() or None
+        if url:
+            _validate_external_url(url)  # raises ValueError on unsafe URLs
+        return url
 
     def _call_api(self, text: str, context: Optional[Dict]) -> Tuple[bool, float, List[Dict]]:
         url = self._api_url()
         if not url:
             raise ValueError("GA Guard API URL not configured. Set GA_GUARD_API_URL.")
 
-        api_key = self.config.get("api_key") or os.getenv("GA_GUARD_API_KEY", "").strip()
+        api_key = os.getenv("GA_GUARD_API_KEY", "").strip() or self.config.get("api_key")
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -743,6 +939,25 @@ class GuardrailFramework:
         self.backends[GuardrailBackend.LAKERA.value]        = LakeraGuardBackend({})
         self.backends[GuardrailBackend.GA_GUARD.value]      = GAGuardBackend({})
 
+        any_real_sdk = (
+            _NEMO_SDK
+            or _GUARDRAILSAI_SDK
+            or _PRESIDIO_SDK
+            or os.getenv("LAKERA_GUARD_API_KEY", "").strip()
+            or os.getenv("GA_GUARD_API_URL", "").strip()
+        )
+        if not any_real_sdk:
+            self.logger.warning(
+                "No guardrail SDK detected. All backends will use the built-in "
+                "regex/keyword scorer, which is NOT sufficient for production AI "
+                "safety. Install at least one real backend:\n"
+                "  • pip install guardrails-ai   (GuardrailsAI)\n"
+                "  • pip install nemoguardrails  (NVIDIA NeMo)\n"
+                "  • pip install presidio-analyzer presidio-anonymizer  (PII)\n"
+                "  • Set LAKERA_GUARD_API_KEY for the Lakera cloud backend\n"
+                "  • Set GA_GUARD_API_URL for a custom GA Guard service"
+            )
+
     def set_persistence(self, layer: Any):
         """Wire in a PersistenceLayer. Call from server startup."""
         self._persistence = layer
@@ -770,6 +985,45 @@ class GuardrailFramework:
         self.backends[name] = backend
         self.logger.info(f"Backend registered: {name}")
 
+    # ── Policy lookup ──────────────────────────────────────────────
+
+    def _get_policy(self, policy_id: str) -> Optional["GuardrailPolicy"]:
+        """
+        Return the policy, checking the in-memory cache first then the DB.
+
+        On a cache miss (policy was created on another replica) the policy is
+        loaded from persistence and cached locally so subsequent calls are fast.
+        Returns None if the policy doesn't exist in either store.
+        """
+        if policy_id in self.policies:
+            return self.policies[policy_id]
+
+        if not self._persistence:
+            return None
+
+        try:
+            data = self._persistence.load_policy(policy_id)
+        except Exception as exc:
+            self.logger.warning("Failed to load policy %s from DB: %s", policy_id, exc)
+            return None
+
+        if data is None:
+            return None
+
+        try:
+            data["backend"] = GuardrailBackend(data["backend"])
+            data["action_on_violation"] = ActionType(data["action_on_violation"])
+            data["risk_categories"] = [RiskCategory(r) for r in data.get("risk_categories", [])]
+            policy = GuardrailPolicy(**{
+                k: v for k, v in data.items()
+                if k in GuardrailPolicy.__dataclass_fields__
+            })
+            self.policies[policy.id] = policy
+            return policy
+        except Exception as exc:
+            self.logger.warning("Failed to deserialize policy %s: %s", policy_id, exc)
+            return None
+
     # ── Policy lifecycle ───────────────────────────────────────────
 
     def create_policy(self, policy: GuardrailPolicy, created_by: str = "api") -> str:
@@ -790,10 +1044,31 @@ class GuardrailFramework:
             pass
         return policy.id
 
+    # Keys that backend resolves from env vars only — must not be overridable
+    # via policy.rules to prevent an authenticated caller from redirecting API
+    # calls to an attacker-controlled key or endpoint.
+    _BLOCKED_RULE_KEYS: frozenset = frozenset({"api_key", "api_url"})
+
+    # Tool-enforcement keys that must be reset before each policy evaluation
+    # so that state from a previous policy's rules never bleeds into the next.
+    _TOOL_RULE_KEYS: frozenset = frozenset({"allowed_tools", "restricted_tools", "forbidden_tools"})
+
     def _inject_policy_rules(self, backend: GuardrailBackendInterface, policy: GuardrailPolicy):
         """Push policy fields into backend config so the backend has full context."""
+        # Clear tool-enforcement keys first. Backends are singletons; without
+        # this reset, a key set by Policy A's rules persists in backend.config
+        # and is silently inherited by Policy B if B's rules omit that key.
+        for key in self._TOOL_RULE_KEYS:
+            backend.config.pop(key, None)
+
         if policy.rules:
-            backend.config.update(policy.rules)
+            # Exclude blocked keys (api_key, api_url) and null values.
+            # Null values must be stripped: {"allowed_tools": null} would set
+            # backend.config["allowed_tools"] = None, making _check_tools treat
+            # it as "no allowlist configured" and skip enforcement entirely.
+            safe_rules = {k: v for k, v in policy.rules.items()
+                          if k not in self._BLOCKED_RULE_KEYS and v is not None}
+            backend.config.update(safe_rules)
         # These are always injected so backends can look them up
         backend.config["_policy_id"] = policy.id
         backend.config["sensitivity"] = policy.sensitivity
@@ -804,10 +1079,9 @@ class GuardrailFramework:
         from .testing import fail_closed_result
         from .opa_gaps import data_registry, status_reporter, prom_metrics
 
-        if policy_id not in self.policies:
+        policy = self._get_policy(policy_id)
+        if policy is None:
             return fail_closed_result(f"Policy not found: {policy_id}")
-
-        policy  = self.policies[policy_id]
         backend = self.backends.get(policy.backend.value)
         if not backend:
             return fail_closed_result(f"Backend not configured: {policy.backend.value}")
@@ -841,10 +1115,9 @@ class GuardrailFramework:
         from .testing import fail_closed_result
         from .opa_gaps import data_registry, status_reporter, prom_metrics
 
-        if policy_id not in self.policies:
+        policy = self._get_policy(policy_id)
+        if policy is None:
             return fail_closed_result(f"Policy not found: {policy_id}")
-
-        policy  = self.policies[policy_id]
         backend = self.backends.get(policy.backend.value)
         if not backend:
             return fail_closed_result(f"Backend not configured: {policy.backend.value}")
@@ -878,10 +1151,9 @@ class GuardrailFramework:
         from .testing import fail_closed_result
         from .opa_gaps import data_registry, status_reporter, prom_metrics
 
-        if policy_id not in self.policies:
+        policy = self._get_policy(policy_id)
+        if policy is None:
             return fail_closed_result(f"Policy not found: {policy_id}")
-
-        policy  = self.policies[policy_id]
         backend = self.backends.get(policy.backend.value)
         if not backend:
             return fail_closed_result(f"Backend not configured: {policy.backend.value}")

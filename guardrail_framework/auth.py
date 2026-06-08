@@ -20,7 +20,10 @@ from starlette.requests import Request
 
 logger = logging.getLogger("auth")
 
-# Paths that never require auth
+# Paths that never require the X-API-Key header from this middleware.
+# /push/events is included because the native browser EventSource API cannot
+# send custom headers. Auth is enforced inside the route handler via the
+# mandatory ?api_key= query parameter instead.
 _PUBLIC_PATHS: Set[str] = {
     "/health",
     "/ready",
@@ -28,11 +31,8 @@ _PUBLIC_PATHS: Set[str] = {
     "/openapi.json",
     "/redoc",
     "/metrics/prometheus",   # Prometheus scrape — secure at network level
+    "/push/events",          # auth handled in route handler via ?api_key= query param
 }
-
-# SSE endpoint: browsers cannot set custom headers on EventSource.
-# Secure this at the reverse-proxy / network level in production.
-_SSE_PATH = "/push/events"
 
 
 def load_api_keys() -> Set[str]:
@@ -40,8 +40,10 @@ def load_api_keys() -> Set[str]:
     if not raw:
         key = secrets.token_hex(32)
         logger.warning("GUARDRAIL_API_KEYS not configured — generated ephemeral key for this process.")
-        logger.warning(f"  Key: {key}")
-        logger.warning("  Set GUARDRAIL_API_KEYS=<key> in your environment to make it persistent.")
+        # Print directly to stderr so the key bypasses log shippers (Datadog, CloudWatch, etc.)
+        import sys
+        print(f"  Ephemeral API key: {key}", file=sys.stderr)
+        print("  Set GUARDRAIL_API_KEYS=<key> in your environment to make it persistent.", file=sys.stderr)
         return {key}
     keys = {k.strip() for k in raw.split(",") if k.strip()}
     logger.info(f"Loaded {len(keys)} API key(s) from environment.")
@@ -61,13 +63,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if path in _PUBLIC_PATHS or path == _SSE_PATH:
+        if path in _PUBLIC_PATHS:
             return await call_next(request)
 
-        key = (
-            request.headers.get("X-API-Key")
-            or request.query_params.get("api_key")
-        )
+        key = request.headers.get("X-API-Key")
         if not key or key not in self._keys:
             return JSONResponse(
                 status_code=401,

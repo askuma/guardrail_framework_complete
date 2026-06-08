@@ -8,6 +8,7 @@ aiofiles>=23.0.0
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 sqlalchemy>=2.0.0
+alembic>=1.12.0
 # For PostgreSQL in production, also install: psycopg2-binary>=2.9.0
 
 # ── Monitoring ────────────────────────────────────────────────────────────────
@@ -21,7 +22,8 @@ python-json-logger>=2.0.0
 # spacy>=3.0.0
 # After installing spacy run: python -m spacy download en_core_web_lg
 
-# ── Optional: Distributed caching ─────────────────────────────────────────────
+# ── Optional: Redis (multi-instance rate limiting + caching) ──────────────────
+# Set GUARDRAIL_REDIS_URL=redis://host:6379/0 to activate.
 # redis>=5.0.0
 
 # ── Dev / testing ─────────────────────────────────────────────────────────────

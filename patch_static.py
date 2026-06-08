@@ -47,6 +47,8 @@ if _os.path.isdir(_STATIC_DIR):
                 _API_PREFIXES.add(_seg)
 
     # Serve top-level static files (favicon, manifest, etc.)
+    _REAL_STATIC_DIR = _os.path.realpath(_STATIC_DIR)
+
     @app.get("/{filename:path}", include_in_schema=False)
     def _serve_spa(filename: str = ""):
         # If the first segment is a known API prefix, this is a genuine 404,
@@ -55,9 +57,12 @@ if _os.path.isdir(_STATIC_DIR):
         if first in _API_PREFIXES:
             return _HTMLResponse("Not Found", status_code=404)
 
-        # Serve a real static file if it exists (e.g. favicon.ico, manifest.json)
-        candidate = _os.path.join(_STATIC_DIR, filename)
-        if filename and _os.path.isfile(candidate):
+        # Serve a real static file if it exists (e.g. favicon.ico, manifest.json).
+        # realpath() resolves any .. traversal before the containment check.
+        candidate = _os.path.realpath(_os.path.join(_STATIC_DIR, filename))
+        if (filename
+                and candidate.startswith(_REAL_STATIC_DIR + _os.sep)
+                and _os.path.isfile(candidate)):
             return _FileResponse(candidate)
 
         # Otherwise serve the SPA entrypoint (client-side routing)

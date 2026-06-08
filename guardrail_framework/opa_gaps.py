@@ -605,7 +605,7 @@ class DataProvider:
 class StaticBlocklistProvider(DataProvider):
     """
     Simple in-memory blocklist (users, IPs, keywords).
-    Replace with a Redis / DB fetch for production.
+    Data is lost on restart. Use DatabaseBlocklistProvider for production.
     """
 
     def __init__(self,
@@ -630,6 +630,97 @@ class StaticBlocklistProvider(DataProvider):
     def remove_user(self, user_id: str): self._users.discard(user_id)
     def add_ip(self, ip: str):           self._ips.add(ip)
     def add_keyword(self, kw: str):      self._keywords.add(kw.lower())
+
+
+class DatabaseBlocklistProvider(DataProvider):
+    """
+    Blocklist provider backed by the persistence layer (SQLite / PostgreSQL).
+
+    Survives restarts and is consistent across all replicas when using
+    PostgreSQL. Entries are cached for ``ttl_secs`` to avoid a DB round-trip
+    on every check; mutating methods (add_*/remove_*) invalidate the cache
+    immediately.
+
+    Usage::
+
+        from guardrail_framework.opa_gaps import data_registry
+        from guardrail_framework.persistence import PersistenceLayer
+
+        db = PersistenceLayer()
+        bl = DatabaseBlocklistProvider(db, ttl_secs=30)
+        data_registry.register(bl)
+
+        # Add entries at runtime (persisted across restarts):
+        bl.add_user("bad-actor-id")
+        bl.add_ip("203.0.113.42")
+        bl.add_keyword("drop table")
+    """
+
+    def __init__(self, persistence: Any, ttl_secs: float = 30.0):
+        self._persistence = persistence
+        self._ttl = ttl_secs
+        self._cache: Optional[Dict[str, Any]] = None
+        self._cache_at: float = 0.0
+        self._lock = threading.Lock()
+
+    def name(self) -> str:
+        return "DatabaseBlocklistProvider"
+
+    def _load(self) -> Dict[str, Any]:
+        now = time.time()
+        with self._lock:
+            if self._cache is not None and (now - self._cache_at) < self._ttl:
+                return dict(self._cache)
+        try:
+            raw = self._persistence.load_blocklist()
+            result = {
+                "_users":    set(raw.get("user", [])),
+                "_ips":      set(raw.get("ip", [])),
+                "_keywords": set(kw.lower() for kw in raw.get("keyword", [])),
+            }
+            with self._lock:
+                self._cache = result
+                self._cache_at = time.time()
+            return result
+        except Exception as exc:
+            logger.warning("DatabaseBlocklistProvider: DB fetch failed: %s", exc)
+            return {"_users": set(), "_ips": set(), "_keywords": set()}
+
+    def _invalidate(self):
+        with self._lock:
+            self._cache = None
+
+    def fetch(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        data = self._load()
+        return {
+            "blocklisted_user":  context.get("user_id") in data["_users"],
+            "blocklisted_ip":    context.get("ip") in data["_ips"],
+            "blocked_keywords":  list(data["_keywords"]),
+        }
+
+    def add_user(self, user_id: str):
+        self._persistence.save_blocklist_entry("user", user_id)
+        self._invalidate()
+
+    def remove_user(self, user_id: str):
+        self._persistence.delete_blocklist_entry("user", user_id)
+        self._invalidate()
+
+    def add_ip(self, ip: str):
+        self._persistence.save_blocklist_entry("ip", ip)
+        self._invalidate()
+
+    def remove_ip(self, ip: str):
+        self._persistence.delete_blocklist_entry("ip", ip)
+        self._invalidate()
+
+    def add_keyword(self, kw: str):
+        self._persistence.save_blocklist_entry("keyword", kw.lower())
+        self._invalidate()
+
+    def remove_keyword(self, kw: str):
+        self._persistence.delete_blocklist_entry("keyword", kw.lower())
+        self._invalidate()
 
 
 class HttpDataProvider(DataProvider):
