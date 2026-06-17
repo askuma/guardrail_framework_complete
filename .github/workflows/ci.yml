@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: "Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run test suite
+        env:
+          GUARDRAIL_API_KEYS: test-key
+          GUARDRAIL_AUTH_ENABLED: "true"
+          GUARDRAIL_DB_URL: "sqlite:///./ci_test.db"
+        run: pytest tests/ -v --tb=short
+
+      - name: Probe library self-check
+        run: |
+          python - <<'EOF'
+          from guardrail_framework.probes import ProbeLibrary, AttackCategory
+
+          lib = ProbeLibrary()
+          all_probes = lib.list_probes()
+
+          # Minimum total probe count
+          assert len(all_probes) >= 58, (
+              f"Probe count regression: expected >= 58, got {len(all_probes)}"
+          )
+
+          # Every category must have at least 5 probes
+          for cat in AttackCategory:
+              category_probes = lib.list_probes(category=cat)
+              assert len(category_probes) >= 5, (
+                  f"Category {cat.value} has only {len(category_probes)} probes (minimum 5)"
+              )
+
+          # owasp_ref must match category.value for every probe
+          for p in all_probes:
+              assert p.owasp_ref == p.category.value, (
+                  f"Probe {p.id}: owasp_ref={p.owasp_ref!r} != category.value={p.category.value!r}"
+              )
+
+          # Every probe must have at least 2 tags
+          for p in all_probes:
+              assert len(p.tags) >= 2, (
+                  f"Probe {p.id} has fewer than 2 tags: {p.tags}"
+              )
+
+          # Probe IDs must be unique
+          ids = [p.id for p in all_probes]
+          assert len(ids) == len(set(ids)), (
+              f"Duplicate probe IDs: {[i for i in ids if ids.count(i) > 1]}"
+          )
+
+          print(f"Probe self-check passed: {len(all_probes)} probes across {len(AttackCategory)} categories")
+          EOF
+
+      - name: Cleanup test database
+        if: always()
+        run: rm -f ci_test.db ci_test.db-shm ci_test.db-wal

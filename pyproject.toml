@@ -1,0 +1,136 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "guardrailprobe"
+version = "0.1.0"
+description = "Test your AI guardrail layer, not your model. Provider-agnostic. OWASP LLM Top 10."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Ashutosh Kumar", email = "ashuthemaddy@gmail.com" }]
+requires-python = ">=3.9"
+keywords = [
+    "guardrails",
+    "llm-security",
+    "red-teaming",
+    "owasp",
+    "ai-safety",
+    "prompt-injection",
+    "nemo",
+    "presidio",
+    "lakera",
+    "llm",
+    "ai-guardrails",
+    "adversarial-testing",
+    "owasp-llm-top-10",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+# Core runtime dependencies — mirrors requirements.txt (non-optional section)
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "aiofiles>=23.0.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "prometheus-client>=0.18.0",
+    "python-json-logger>=2.0.0",
+]
+
+[project.optional-dependencies]
+
+# PDF signing for GET /redteam/reports/{run_id}/export
+signing = [
+    "reportlab>=4.0.0",
+    "pyhanko>=0.21.0",
+    "pyhanko-certvalidator>=0.26.0",
+]
+
+# Real Presidio PII detection (replaces regex fallback)
+presidio = [
+    "presidio-analyzer>=2.2.0",
+    "presidio-anonymizer>=2.2.0",
+    "spacy>=3.0.0",
+]
+
+# NeMo Guardrails backend
+nemo = [
+    "nemoguardrails>=0.6.0",
+]
+
+# GuardrailsAI backend
+guardrails_ai = [
+    "guardrails-ai>=0.4.0",
+]
+
+# Cross-replica rate limiting and caching
+redis = [
+    "redis>=5.0.0",
+]
+
+# PostgreSQL in production
+postgres = [
+    "psycopg2-binary>=2.9.0",
+]
+
+# Everything needed to run and develop
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.24.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Full install (all optional backends + signing)
+all = [
+    "guardrailprobe[signing,presidio,nemo,guardrails_ai,redis,postgres]",
+]
+
+[project.urls]
+Homepage = "https://github.com/ashuthemaddy/guardrailprobe"
+Documentation = "https://github.com/ashuthemaddy/guardrailprobe/blob/main/METHODOLOGY.md"
+"Issue Tracker" = "https://github.com/ashuthemaddy/guardrailprobe/issues"
+Changelog = "https://github.com/ashuthemaddy/guardrailprobe/blob/main/CHANGELOG.md"
+
+[project.scripts]
+# guardrailprobe serve  → starts the FastAPI server via uvicorn
+# guardrailprobe scan   → runs RedTeamRunner.compare_backends() from CLI
+guardrailprobe = "guardrail_framework.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["guardrail_framework*"]
+
+[tool.setuptools.package-data]
+# Include the built-in probe library as package data so it ships with the wheel
+"guardrail_framework" = ["probes.py", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
