@@ -20,10 +20,7 @@ from starlette.requests import Request
 
 logger = logging.getLogger("auth")
 
-# Paths that never require the X-API-Key header from this middleware.
-# /push/events is included because the native browser EventSource API cannot
-# send custom headers. Auth is enforced inside the route handler via the
-# mandatory ?api_key= query parameter instead.
+# Exact paths that are always public (no API key needed).
 _PUBLIC_PATHS: Set[str] = {
     "/health",
     "/ready",
@@ -33,6 +30,16 @@ _PUBLIC_PATHS: Set[str] = {
     "/metrics/prometheus",   # Prometheus scrape — secure at network level
     "/push/events",          # auth handled in route handler via ?api_key= query param
 }
+
+# First path-segments that belong to the API.  Any request whose first segment
+# is in this set requires an X-API-Key header.  Everything else (root, static
+# assets, SPA navigation URLs) is served by the React dashboard and is public.
+# Add a new segment here whenever a new API route group is introduced.
+_API_PREFIXES: frozenset = frozenset({
+    "check", "policies", "abtests", "metrics", "audit", "alerts",
+    "schema", "test", "decision-log", "bundles", "versions", "push",
+    "precompiler", "status", "score", "data-providers", "redteam",
+})
 
 
 def load_api_keys() -> Set[str]:
@@ -63,7 +70,15 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
+
+        # Explicit public paths (health probes, docs, Prometheus scrape, SSE).
         if path in _PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Dashboard routes: anything whose first path segment is not a known API
+        # prefix is served by the React SPA and requires no API key.
+        first_seg = path.lstrip("/").split("/")[0]
+        if first_seg not in _API_PREFIXES:
             return await call_next(request)
 
         key = request.headers.get("X-API-Key")
