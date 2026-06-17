@@ -26,6 +26,13 @@ python-json-logger>=2.0.0
 # Set GUARDRAIL_REDIS_URL=redis://host:6379/0 to activate.
 # redis>=5.0.0
 
+# ── Report signing ────────────────────────────────────────────────────────────
+# PDF generation and digital signing for red-team reports
+# (GET /redteam/reports/{run_id}/export)
+reportlab>=4.0.0
+pyhanko>=0.21.0
+pyhanko-certvalidator>=0.26.0
+
 # ── Dev / testing ─────────────────────────────────────────────────────────────
 pytest>=7.0.0
 pytest-asyncio>=0.21.0

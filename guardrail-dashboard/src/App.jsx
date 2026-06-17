@@ -901,6 +901,450 @@ function VersionsTab({ toast }) {
   );
 }
 
+// ── Red Team ─────────────────────────────────────────────────────────────────
+const RT_OWASP = [
+  { ref: 'LLM01', label: 'Prompt Injection' },
+  { ref: 'LLM02', label: 'Insecure Output' },
+  { ref: 'LLM03', label: 'Training Data Poisoning' },
+  { ref: 'LLM04', label: 'Model DoS' },
+  { ref: 'LLM05', label: 'Supply Chain' },
+  { ref: 'LLM06', label: 'Sensitive Info Disclosure' },
+  { ref: 'LLM07', label: 'Insecure Plugin' },
+  { ref: 'LLM08', label: 'Excessive Agency' },
+  { ref: 'LLM09', label: 'Overreliance' },
+  { ref: 'LLM10', label: 'Model Theft' },
+];
+
+function RedTeamTab({ toast }) {
+  const [backends,        setBackends]        = useState([]);
+  const [selectedBackend, setSelectedBackend] = useState('guardrails_ai');
+  const [selectedCats,    setSelectedCats]    = useState([]);
+  const [severity,        setSeverity]        = useState('');
+  const [loading,         setLoading]         = useState(false);
+  const [report,          setReport]          = useState(null);
+  const [compareReport,   setCompareReport]   = useState(null);
+  const [probeFilter,     setProbeFilter]     = useState('all');
+  const [expandedProbe,   setExpandedProbe]   = useState(null);
+  const [probeMap,        setProbeMap]        = useState({});
+  const [baselineRunId,   setBaselineRunId]   = useState('');
+  const [baselineReport,  setBaselineReport]  = useState(null);
+  const [baselineLoading, setBaselineLoading] = useState(false);
+
+  useEffect(() => {
+    api.getBackends()
+      .then(r => {
+        const bs = (r.backends || []).filter(b => b !== 'custom');
+        setBackends(bs);
+        if (bs.length) setSelectedBackend(bs[0]);
+      })
+      .catch(() => {});
+    api.redteamProbes()
+      .then(probes => {
+        const m = {};
+        for (const p of probes) m[p.id] = p;
+        setProbeMap(m);
+      })
+      .catch(() => {});
+  }, []);
+
+  const toggleCat = (ref) =>
+    setSelectedCats(prev => prev.includes(ref) ? prev.filter(c => c !== ref) : [...prev, ref]);
+
+  const runSingle = async () => {
+    setLoading(true); setReport(null);
+    try {
+      const r = await api.redteamRun({
+        backend: selectedBackend,
+        categories: selectedCats.length ? selectedCats : null,
+        severity: severity || null,
+      });
+      setReport(r);
+      toast(`Run complete: ${r.passed}/${r.total_probes} passed`, 'ok');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  };
+
+  const runCompare = async () => {
+    setLoading(true); setCompareReport(null);
+    try {
+      const r = await api.redteamCompare({
+        backends: null,
+        categories: selectedCats.length ? selectedCats : null,
+      });
+      setCompareReport(r);
+      toast(`Comparison complete: ${r.backends_tested.length} backends`, 'ok');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  };
+
+  const loadBaseline = async () => {
+    if (!baselineRunId) return;
+    setBaselineLoading(true);
+    try {
+      setBaselineReport(await api.redteamReport(baselineRunId));
+      toast('Baseline loaded', 'ok');
+    } catch (e) { toast(e.message, 'error'); setBaselineReport(null); }
+    finally { setBaselineLoading(false); }
+  };
+
+  const passColor = (rate) =>
+    rate >= 0.8 ? C.green : rate >= 0.5 ? C.amber : C.red;
+
+  const sevColor = (s) =>
+    ({ critical: C.red, high: C.amber, medium: C.blue, low: C.muted }[s] ?? C.muted);
+
+  const owaspLabel = (ref) =>
+    RT_OWASP.find(c => c.ref === ref)?.label ?? ref;
+
+  const probeResults = report?.probe_results ?? [];
+  const filteredProbes = probeResults.filter(pr =>
+    probeFilter === 'pass' ? pr.passed : probeFilter === 'fail' ? !pr.passed : true
+  );
+
+  // Comparison pivot: backend → { owasp_ref → summary row }
+  const pivot = {};
+  if (compareReport) {
+    for (const row of compareReport.summary_table || []) {
+      if (!pivot[row.backend]) pivot[row.backend] = {};
+      pivot[row.backend][row.owasp_ref] = row;
+    }
+  }
+
+  // Regression diff
+  const regressions = [], improvements = [], stablePass = [], stableFail = [];
+  if (report && baselineReport) {
+    const baseMap = Object.fromEntries(
+      (baselineReport.probe_results || []).map(p => [p.probe_id, p])
+    );
+    for (const pr of report.probe_results || []) {
+      const base = baseMap[pr.probe_id];
+      if (!base) continue;
+      if (base.passed && !pr.passed)       regressions.push(pr);
+      else if (!base.passed && pr.passed)  improvements.push(pr);
+      else if (pr.passed)                  stablePass.push(pr);
+      else                                 stableFail.push(pr);
+    }
+  }
+
+  return (
+    <div>
+      <SectionHead title="Red Team" />
+
+      {/* ── Section 1: Run Controls ── */}
+      <Card style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 16px' }}>Run Controls</h3>
+
+        <p style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
+          Backend <span style={{ color: C.muted }}>(for single-backend run)</span>
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          {backends.map(b => (
+            <button key={b} onClick={() => setSelectedBackend(b)} style={{
+              padding: '5px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+              border: `1px solid ${selectedBackend === b ? C.blue : C.border}`,
+              backgroundColor: selectedBackend === b ? C.blue + '22' : 'transparent',
+              color: selectedBackend === b ? C.blue : C.muted,
+            }}>{b.replace(/_/g, ' ')}</button>
+          ))}
+        </div>
+
+        <p style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
+          OWASP Categories <span style={{ color: C.muted }}>(empty = all)</span>
+        </p>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+          {RT_OWASP.map(({ ref, label }) => {
+            const active = selectedCats.includes(ref);
+            return (
+              <button key={ref} onClick={() => toggleCat(ref)} style={{
+                padding: '4px 10px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                border: `1px solid ${active ? C.purple : C.border}`,
+                backgroundColor: active ? C.purple + '22' : 'transparent',
+                color: active ? C.purple : C.muted,
+              }}>{ref}: {label}</button>
+            );
+          })}
+        </div>
+
+        <p style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>Severity</p>
+        <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+          {['', 'low', 'medium', 'high', 'critical'].map(s => (
+            <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: severity === s ? C.text : C.muted }}>
+              <input type="radio" name="rt-severity" value={s} checked={severity === s} onChange={() => setSeverity(s)} style={{ accentColor: C.blue }} />
+              {s || 'All'}
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Btn variant="primary" onClick={runSingle} disabled={loading || !selectedBackend}>
+            {loading ? 'Running…' : '▶ Run Single Backend'}
+          </Btn>
+          <Btn onClick={runCompare} disabled={loading}>
+            {loading ? 'Running…' : '⚡ Compare All Backends'}
+          </Btn>
+          {loading && (
+            <span style={{ fontSize: 12, color: C.muted }}>Running probes, this may take a moment…</span>
+          )}
+        </div>
+      </Card>
+
+      {/* ── Section 2: Comparison Table ── */}
+      {compareReport && (
+        <Card style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 16px' }}>Comparison Table</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <th style={{ textAlign: 'left',   padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Backend</th>
+                  <th style={{ textAlign: 'center', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Overall %</th>
+                  {RT_OWASP.map(({ ref }) => (
+                    <th key={ref} style={{ textAlign: 'center', padding: '8px 6px', color: C.sub, fontWeight: 500, fontSize: 11 }}>{ref}</th>
+                  ))}
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Avg ms</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compareReport.backends_tested.map(backend => {
+                  const rep     = compareReport.reports[backend];
+                  const rate    = rep?.pass_rate ?? 0;
+                  const isBest  = backend === compareReport.best_overall;
+                  const isWorst = backend === compareReport.worst_overall && !isBest;
+                  return (
+                    <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                      <td style={{ padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: C.text, fontWeight: isBest ? 700 : 400 }}>{backend.replace(/_/g, ' ')}</span>
+                          {isBest  && <Badge color={C.green}>Best</Badge>}
+                          {isWorst && <Badge color={C.red}>Worst</Badge>}
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: passColor(rate) }}>
+                          {(rate * 100).toFixed(0)}%
+                        </span>
+                      </td>
+                      {RT_OWASP.map(({ ref }) => {
+                        const cell     = pivot[backend]?.[ref];
+                        const cr       = cell?.pass_rate;
+                        const isWinner = compareReport.category_winners?.[ref] === backend;
+                        return (
+                          <td key={ref} style={{ padding: '10px 6px', textAlign: 'center' }}>
+                            {cr != null
+                              ? <span style={{ color: passColor(cr), fontWeight: isWinner ? 700 : 400, fontSize: 12 }}>
+                                  {(cr * 100).toFixed(0)}%{isWinner ? ' ★' : ''}
+                                </span>
+                              : <span style={{ color: C.border }}>—</span>
+                            }
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding: '10px 12px', textAlign: 'right', color: C.sub }}>
+                        {rep?.average_latency_ms?.toFixed(0) ?? '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* ── Section 3: Probe Drill Down ── */}
+      {probeResults.length > 0 && (
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: 0 }}>
+              Probe Drill Down
+              <span style={{ fontSize: 12, fontWeight: 400, color: C.muted, marginLeft: 8 }}>
+                {filteredProbes.length} / {probeResults.length}
+              </span>
+            </h3>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['all', 'pass', 'fail'].map(f => (
+                <button key={f} onClick={() => setProbeFilter(f)} style={{
+                  padding: '4px 10px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+                  border: `1px solid ${probeFilter === f ? C.blue : C.border}`,
+                  backgroundColor: probeFilter === f ? C.blue + '22' : 'transparent',
+                  color: probeFilter === f ? C.blue : C.muted,
+                }}>{f}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  {['ID', 'Category', 'Severity', 'OWASP', 'Expected', 'Actual', 'Result', 'Latency ms'].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.sub, fontWeight: 500 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProbes.map(pr => (
+                  <React.Fragment key={pr.probe_id}>
+                    <tr
+                      onClick={() => setExpandedProbe(expandedProbe === pr.probe_id ? null : pr.probe_id)}
+                      style={{
+                        borderBottom: expandedProbe === pr.probe_id ? 'none' : `1px solid ${C.border}22`,
+                        cursor: 'pointer',
+                        backgroundColor: expandedProbe === pr.probe_id ? C.bg : 'transparent',
+                      }}
+                    >
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: C.blue, fontSize: 11 }}>{pr.probe_id}</td>
+                      <td style={{ padding: '8px 10px', color: C.sub, fontSize: 11 }}>{owaspLabel(pr.owasp_ref)}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <Badge color={sevColor(pr.severity)}>{pr.severity}</Badge>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: C.muted, fontFamily: 'monospace', fontSize: 11 }}>{pr.owasp_ref}</td>
+                      <td style={{ padding: '8px 10px', color: C.sub }}>{pr.expected_action}</td>
+                      <td style={{ padding: '8px 10px', color: pr.actual_action === pr.expected_action ? C.green : C.red }}>
+                        {pr.actual_action}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <Badge color={pr.passed ? C.green : C.red}>{pr.passed ? 'PASS' : 'FAIL'}</Badge>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: C.muted }}>{pr.latency_ms?.toFixed(1)}</td>
+                    </tr>
+                    {expandedProbe === pr.probe_id && (
+                      <tr style={{ borderBottom: `1px solid ${C.border}22` }}>
+                        <td colSpan={8} style={{ padding: '14px 16px', backgroundColor: C.bg }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 12 }}>
+                            <div>
+                              <p style={{ fontSize: 11, color: C.sub, margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Description</p>
+                              <p style={{ fontSize: 12, color: C.text, margin: 0 }}>{pr.description}</p>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: 11, color: C.sub, margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Tags</p>
+                              <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>{pr.tags?.join(', ') || '—'}</p>
+                            </div>
+                          </div>
+                          {probeMap[pr.probe_id]?.payload && (
+                            <div style={{ marginBottom: 12 }}>
+                              <p style={{ fontSize: 11, color: C.sub, margin: '0 0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Payload</p>
+                              <pre style={{
+                                fontSize: 11, color: C.amber, backgroundColor: C.card, borderRadius: 4,
+                                padding: '8px 12px', margin: 0, overflowX: 'auto', whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word', maxHeight: 120, border: `1px solid ${C.border}`,
+                              }}>
+                                {probeMap[pr.probe_id].payload.length > 400
+                                  ? probeMap[pr.probe_id].payload.slice(0, 400) + '…'
+                                  : probeMap[pr.probe_id].payload}
+                              </pre>
+                            </div>
+                          )}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                            <div>
+                              <p style={{ fontSize: 11, color: C.sub, margin: '0 0 6px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Risk Score</p>
+                              <div style={{ background: C.card, borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 4, border: `1px solid ${C.border}` }}>
+                                <div style={{
+                                  height: '100%',
+                                  width: `${(pr.risk_score ?? 0) * 100}%`,
+                                  backgroundColor: (pr.risk_score ?? 0) > 0.6 ? C.red : (pr.risk_score ?? 0) > 0.3 ? C.amber : C.green,
+                                  transition: 'width .4s',
+                                }} />
+                              </div>
+                              <span style={{ fontSize: 12, color: C.text }}>
+                                {typeof pr.risk_score === 'number' ? `${(pr.risk_score * 100).toFixed(0)}%` : '—'}
+                              </span>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: 11, color: C.sub, margin: '0 0 6px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Detected Risks</p>
+                              {pr.detected_risks?.length
+                                ? pr.detected_risks.map((r, i) => (
+                                  <div key={i} style={{ fontSize: 11, color: C.red }}>⚠ {typeof r === 'object' ? JSON.stringify(r) : r}</div>
+                                ))
+                                : <span style={{ fontSize: 12, color: C.muted }}>none detected</span>
+                              }
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* ── Section 4: Regression View ── */}
+      {report && (
+        <Card>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 16px' }}>Regression View</h3>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 16 }}>
+            <div style={{ flex: 1 }}>
+              <Input
+                label="Baseline Run ID"
+                value={baselineRunId}
+                onChange={e => setBaselineRunId(e.target.value)}
+                placeholder="Paste a previous run_id to compare"
+              />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <Btn onClick={loadBaseline} disabled={baselineLoading || !baselineRunId}>
+                {baselineLoading ? 'Loading…' : 'Load Baseline'}
+              </Btn>
+            </div>
+          </div>
+
+          <div style={{ padding: '10px 14px', backgroundColor: C.bg, borderRadius: 6, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: C.sub }}>Current run ID:</span>
+            <code style={{ fontSize: 12, color: C.blue, fontFamily: 'monospace', flex: 1 }}>{report.run_id}</code>
+            <span style={{ fontSize: 11, color: C.muted }}>({report.passed}/{report.total_probes} passed · {report.backend})</span>
+          </div>
+
+          {!baselineReport ? (
+            <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '20px 0' }}>
+              Load a baseline run above to compare regressions and improvements
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+                <StatCard label="Regressions"  value={regressions.length}  color={regressions.length  ? C.red   : C.muted} />
+                <StatCard label="Improvements" value={improvements.length} color={improvements.length ? C.green : C.muted} />
+                <StatCard label="Stable Pass"  value={stablePass.length}   color={C.muted} />
+                <StatCard label="Stable Fail"  value={stableFail.length}   color={C.border} />
+              </div>
+              {(regressions.length + improvements.length + stablePass.length + stableFail.length) === 0 ? (
+                <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '16px 0' }}>
+                  No overlapping probes between runs
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gap: 4 }}>
+                  {[
+                    ...regressions.map(pr  => ({ pr, type: 'regression' })),
+                    ...improvements.map(pr => ({ pr, type: 'improvement' })),
+                    ...stablePass.map(pr   => ({ pr, type: 'stable_pass' })),
+                    ...stableFail.map(pr   => ({ pr, type: 'stable_fail' })),
+                  ].map(({ pr, type }) => {
+                    const color = type === 'regression' ? C.red : type === 'improvement' ? C.green : C.border;
+                    const label = { regression: 'REGRESSION', improvement: 'IMPROVED', stable_pass: 'STABLE PASS', stable_fail: 'STABLE FAIL' }[type];
+                    return (
+                      <div key={pr.probe_id} style={{
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                        backgroundColor: (type === 'regression' || type === 'improvement') ? color + '11' : 'transparent',
+                        borderRadius: 4, borderLeft: `3px solid ${color}`,
+                      }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.blue, minWidth: 100 }}>{pr.probe_id}</span>
+                        <span style={{ fontSize: 11, color: C.muted, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pr.description}</span>
+                        <Badge color={color}>{label}</Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
 // ═════════════════════════════════════════════════════════════════════════════
@@ -914,6 +1358,7 @@ const TABS = [
   { id: 'alerts',    label: '🚨 Alerts'    },
   { id: 'abtests',   label: '🔀 A/B Tests' },
   { id: 'audit',     label: '📜 Audit Log' },
+  { id: 'redteam',   label: '🔴 Red Team'  },
 ];
 
 export default function App() {
@@ -1026,6 +1471,7 @@ export default function App() {
         {tab === 'alerts'   && <AlertsTab   toast={showToast} />}
         {tab === 'abtests'  && <ABTestsTab  toast={showToast} />}
         {tab === 'audit'    && <AuditTab />}
+        {tab === 'redteam'  && <RedTeamTab  toast={showToast} />}
       </div>
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}

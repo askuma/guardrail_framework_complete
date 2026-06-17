@@ -89,4 +89,10 @@ export const api = {
   updateBlocklist: (body) => req('POST', '/data-providers/blocklist', body),
   dataProviderStats: ()   => req('GET',  '/data-providers/stats'),
   enrichContext:   (ctx)  => req('POST', '/data-providers/enrich', ctx),
+
+  // ── Red Team ─────────────────────────────────────────
+  redteamRun:     (body)   => req('POST', '/redteam/run', body),
+  redteamCompare: (body)   => req('POST', '/redteam/compare', body),
+  redteamProbes:  (qs='')  => req('GET',  `/redteam/probes${qs}`),
+  redteamReport:  (runId)  => req('GET',  `/redteam/reports/${runId}`),
 };

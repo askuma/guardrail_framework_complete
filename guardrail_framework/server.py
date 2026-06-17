@@ -945,3 +945,323 @@ def data_provider_stats():
 def enrich_context(context: Dict[str, Any]):
     """Test the data provider pipeline: returns an enriched context dict."""
     return data_registry.enrich(context)
+
+
+# ── Red Team ──────────────────────────────────────────────────────────────────
+
+from guardrail_framework.red_team_runner import (   # noqa: E402
+    RedTeamRunner as _RedTeamRunner,
+    RedTeamReport as _RedTeamReport,
+    ComparisonReport as _ComparisonReport,
+)
+from guardrail_framework.probes import (            # noqa: E402
+    ProbeLibrary as _ProbeLibrary,
+    AttackCategory as _AttackCategory,
+    AttackProbe as _AttackProbe,
+)
+
+# Module-level singletons — same pattern as _decision_shipper / _bundle_poller.
+# Custom probes added via POST /redteam/probes/custom persist for the process
+# lifetime in _probe_library; _red_team_runner stores reports in its own dict.
+_probe_library: _ProbeLibrary = _ProbeLibrary()
+_red_team_runner: _RedTeamRunner = _RedTeamRunner(framework)
+
+
+# ── Request models ────────────────────────────────────────────────────────────
+
+class RedTeamRunRequest(_BM):
+    backend: str
+    categories: Optional[List[str]] = None
+    severity: Optional[str] = None
+
+
+class RedTeamCompareRequest(_BM):
+    backends: Optional[List[str]] = None
+    categories: Optional[List[str]] = None
+
+
+class CustomProbeRequest(_BM):
+    id: str
+    category: str           # AttackCategory value, e.g. "LLM01"
+    payload: str
+    expected_action: str    # ActionType value, e.g. "block"
+    severity: str           # "low" | "medium" | "high" | "critical"
+    owasp_ref: str          # must match category value
+    description: str
+    tags: Optional[List[str]] = []
+
+
+# ── Serialisation helpers (no equivalent in existing routes; kept private) ────
+
+def _probe_to_dict(p: _AttackProbe) -> Dict[str, Any]:
+    return {
+        "id":              p.id,
+        "category":        p.category.value,
+        "payload":         p.payload,
+        "expected_action": p.expected_action.value,
+        "severity":        p.severity,
+        "owasp_ref":       p.owasp_ref,
+        "description":     p.description,
+        "tags":            p.tags,
+    }
+
+
+def _probe_result_to_dict(pr) -> Dict[str, Any]:
+    return {
+        "probe_id":        pr.probe.id,
+        "owasp_ref":       pr.probe.owasp_ref,
+        "severity":        pr.probe.severity,
+        "description":     pr.probe.description,
+        "tags":            pr.probe.tags,
+        "backend":         pr.backend.value,
+        "actual_action":   pr.actual_action.value,
+        "expected_action": pr.expected_action.value,
+        "passed":          pr.passed,
+        "latency_ms":      pr.latency_ms,
+        "timestamp":       pr.timestamp,
+        "risk_score":      pr.raw_response.risk_score,
+        "detected_risks":  pr.raw_response.detected_risks,
+    }
+
+
+def _report_to_dict(r: _RedTeamReport) -> Dict[str, Any]:
+    return {
+        "backend":             r.backend.value,
+        "run_id":              r.run_id,
+        "timestamp":           r.timestamp,
+        "total_probes":        r.total_probes,
+        "passed":              r.passed,
+        "failed":              r.failed,
+        "pass_rate":           r.pass_rate,
+        "results_by_category": r.results_by_category,
+        "results_by_severity": r.results_by_severity,
+        "average_latency_ms":  r.average_latency_ms,
+        "probe_results":       [_probe_result_to_dict(pr) for pr in r.probe_results],
+    }
+
+
+def _comparison_to_dict(c: _ComparisonReport) -> Dict[str, Any]:
+    return {
+        "run_id":           c.run_id,
+        "timestamp":        c.timestamp,
+        "backends_tested":  [b.value for b in c.backends_tested],
+        "reports":          {k: _report_to_dict(r) for k, r in c.reports.items()},
+        "best_overall":     c.best_overall,
+        "worst_overall":    c.worst_overall,
+        "category_winners": c.category_winners,
+        "summary_table":    c.summary_table,
+    }
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.post("/redteam/run", tags=["Red Team"])
+def redteam_run(req: RedTeamRunRequest):
+    """Fire probes against a single backend and return a structured report.
+
+    ``categories`` and ``severity`` narrow the probe set; omit both to run
+    all 58 built-in probes plus any custom probes added via
+    ``POST /redteam/probes/custom``.
+    """
+    try:
+        backend = GuardrailBackend(req.backend)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown backend: {req.backend!r}. "
+                   f"Valid values: {[b.value for b in GuardrailBackend]}",
+        )
+    try:
+        cats = [_AttackCategory(c) for c in req.categories] if req.categories else None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        report = _red_team_runner.run_against_backend(
+            backend,
+            probes=_probe_library.all_probes(),
+            categories=cats,
+            severity_filter=req.severity,
+        )
+        return _report_to_dict(report)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/redteam/compare", tags=["Red Team"])
+def redteam_compare(req: RedTeamCompareRequest):
+    """Run the same probe set against multiple backends and compare results.
+
+    When ``backends`` is omitted all standard backends (nemo, guardrails_ai,
+    presidio, lakera, ga_guard) are tested.  Backends without a configured
+    SDK or API key fall back to the built-in regex scorer.
+    """
+    raw_backends = (
+        req.backends
+        if req.backends is not None
+        else [b.value for b in GuardrailBackend if b is not GuardrailBackend.CUSTOM]
+    )
+    try:
+        backends = [GuardrailBackend(b) for b in raw_backends]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        cats = [_AttackCategory(c) for c in req.categories] if req.categories else None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        comparison = _red_team_runner.compare_backends(
+            backends,
+            probes=_probe_library.all_probes(),
+            categories=cats,
+        )
+        return _comparison_to_dict(comparison)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/redteam/probes", tags=["Red Team"])
+def redteam_list_probes(
+    category: Optional[str] = Query(None, description="OWASP category value, e.g. LLM01"),
+    severity: Optional[str] = Query(None, description="low | medium | high | critical"),
+    owasp_ref: Optional[str] = Query(None, description="Alias for category"),
+):
+    """List available probes (built-in and custom), with optional filters.
+
+    ``category`` and ``owasp_ref`` are aliases; if both are supplied
+    ``owasp_ref`` takes precedence.
+    """
+    probes = _probe_library.all_probes()
+
+    ref_filter = owasp_ref or category
+    if ref_filter:
+        try:
+            cat = _AttackCategory(ref_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown category/owasp_ref: {ref_filter!r}. "
+                       f"Valid values: {[c.value for c in _AttackCategory]}",
+            )
+        probes = _probe_library.get_by_category(cat)
+
+    if severity:
+        probes = [p for p in probes if p.severity == severity]
+
+    return [_probe_to_dict(p) for p in probes]
+
+
+@app.post("/redteam/probes/custom", tags=["Red Team"], status_code=201)
+def redteam_add_custom_probe(req: CustomProbeRequest):
+    """Register a custom probe in the server-side probe library.
+
+    The probe is available immediately to subsequent ``/redteam/run`` and
+    ``/redteam/compare`` calls for the lifetime of this server process.
+    ``id`` must be unique across built-in and custom probes.
+    ``owasp_ref`` must equal the canonical value of ``category``
+    (e.g. ``category="LLM01"`` → ``owasp_ref="LLM01"``).
+    """
+    try:
+        category = _AttackCategory(req.category)
+        action   = ActionType(req.expected_action)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        probe = _AttackProbe(
+            id=req.id,
+            category=category,
+            payload=req.payload,
+            expected_action=action,
+            severity=req.severity,
+            owasp_ref=req.owasp_ref,
+            description=req.description,
+            tags=req.tags or [],
+        )
+        _probe_library.add_custom_probe(probe)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "added", "probe_id": req.id}
+
+
+@app.get("/redteam/reports/{run_id}", tags=["Red Team"])
+def redteam_get_report(run_id: str):
+    """Retrieve a stored red-team report by run_id.
+
+    Returns a ``RedTeamReport`` (from ``/redteam/run``) or a
+    ``ComparisonReport`` (from ``/redteam/compare``), whichever matches
+    the given ``run_id``.  Reports are kept in memory for the lifetime of
+    the server process.
+    """
+    report = _red_team_runner.get_report(run_id)
+    if report is not None:
+        return _report_to_dict(report)
+    cmp = _red_team_runner.get_comparison_report(run_id)
+    if cmp is not None:
+        return _comparison_to_dict(cmp)
+    raise HTTPException(status_code=404, detail=f"Report not found: {run_id}")
+
+
+# ── Signed PDF export ──────────────────────────────────────────────────────────
+
+from fastapi import BackgroundTasks as _BackgroundTasks   # noqa: E402
+from fastapi.responses import FileResponse as _FileResponse  # noqa: E402
+from guardrail_framework.report_signer import ReportSigner as _ReportSigner  # noqa: E402
+
+# Instantiate lazily; if pyhanko/reportlab are absent, the route returns 501.
+_report_signer: Optional[_ReportSigner] = None
+try:
+    _report_signer = _ReportSigner(audit_shipper=_decision_shipper)
+except ImportError as _rs_import_err:
+    logger.warning("ReportSigner disabled (missing deps): %s", _rs_import_err)
+
+
+@app.get("/redteam/reports/{run_id}/export", tags=["Red Team"])
+def redteam_export_report(run_id: str, background_tasks: _BackgroundTasks):
+    """Generate and download a digitally-signed PDF for the given run_id.
+
+    The PDF is signed with the platform private key (PKCS#12) and includes
+    an RFC 3161 trusted timestamp (FreeTSA for dev, DigiCert for prod).
+    The SHA-256 hash of the signed file is recorded in the audit log.
+
+    Returns the signed PDF as an ``application/pdf`` file attachment.
+    A 501 is returned if ``pyhanko`` or ``reportlab`` are not installed.
+    """
+    if _report_signer is None:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "PDF signing not available. "
+                "Install: pip install pyhanko pyhanko-certvalidator reportlab"
+            ),
+        )
+
+    report = _red_team_runner.get_report(run_id)
+    if report is None:
+        report = _red_team_runner.get_comparison_report(run_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Report not found: {run_id}")
+
+    import tempfile as _tempfile
+    tmp = _tempfile.NamedTemporaryFile(
+        suffix=".pdf", delete=False, prefix=f"guardrail_{run_id[:8]}_"
+    )
+    tmp_path = tmp.name
+    tmp.close()
+
+    try:
+        out_path = _report_signer.generate_signed_report(report, tmp_path)
+    except Exception as exc:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate signed report: {exc}",
+        )
+
+    background_tasks.add_task(os.unlink, str(out_path))
+    return _FileResponse(
+        str(out_path),
+        media_type="application/pdf",
+        filename=f"redteam_report_{run_id[:8]}.pdf",
+    )
