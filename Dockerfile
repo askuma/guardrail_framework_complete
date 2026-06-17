@@ -5,15 +5,12 @@ FROM node:18-alpine AS dashboard-build
 
 WORKDIR /dashboard
 
-# Install JS dependencies (cached layer)
 COPY guardrail-dashboard/package.json .
 RUN npm install --silent
 
-# Copy source and build
 COPY guardrail-dashboard/public/ ./public/
 COPY guardrail-dashboard/src/    ./src/
 
-# Same-origin: dashboard and API served from the same port, so empty base URL
 ENV REACT_APP_API_URL=""
 RUN npm run build
 
@@ -28,8 +25,14 @@ LABEL description="Guardrail Framework – API + React Dashboard (single contain
 
 WORKDIR /app
 
-# System deps
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# System deps.  gcc / g++ / libffi-dev / libssl-dev are required to compile
+# packages with C extensions (cryptography → pyhanko, uvloop, httptools).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps (cached layer)
@@ -42,8 +45,14 @@ COPY guardrail_framework/ ./guardrail_framework/
 COPY setup.py .
 RUN pip install --no-cache-dir -e .
 
-# Download spaCy model for Presidio PII detection
-RUN python -m spacy download en_core_web_lg
+# Install spaCy + Presidio and download the NLP model for PII detection.
+# spacy / presidio are optional in requirements.txt (local dev); they are
+# always installed in the container image so Presidio runs at full accuracy.
+RUN pip install --no-cache-dir \
+    "spacy>=3.0.0" \
+    "presidio-analyzer>=2.2.0" \
+    "presidio-anonymizer>=2.2.0" \
+    && python -m spacy download en_core_web_lg
 
 # Copy the compiled React app from stage 1
 COPY --from=dashboard-build /dashboard/build ./guardrail_framework/static/
