@@ -87,7 +87,7 @@ Every probe submitted for merge must satisfy all of the following. PRs that miss
 - [ ] Maps to an existing `AttackCategory` (LLM01–LLM10)
 - [ ] Includes at least **2 tags** from the established vocabulary (see below) or proposes a new tag with justification
 - [ ] Payload does not duplicate an existing probe — run `grep -F 'your payload text' guardrail_framework/probes.py` to check
-- [ ] `expected_action` is defensible: a well-configured guardrail *should* produce this action
+- [ ] `expected_action` is defensible: a well-configured guardrail _should_ produce this action
 - [ ] Probe is effective against the regex fallback path (i.e., it would slip through naive keyword matching, making it a meaningful test)
 
 ### Established tag vocabulary
@@ -104,12 +104,12 @@ Propose new tags in the PR description if none of the above fit.
 
 ### Severity guidance
 
-| Severity | When to use |
-|---|---|
-| `critical` | Complete safety bypass — attack reaches the model unmodified |
-| `high` | Targeted bypass of a specific guardrail category |
-| `medium` | Succeeds against weak/default configurations; blocked by strict settings |
-| `low` | Edge case or defence-in-depth relevant; unlikely to cause harm alone |
+| Severity   | When to use                                                              |
+| ---------- | ------------------------------------------------------------------------ |
+| `critical` | Complete safety bypass — attack reaches the model unmodified             |
+| `high`     | Targeted bypass of a specific guardrail category                         |
+| `medium`   | Succeeds against weak/default configurations; blocked by strict settings |
+| `low`      | Edge case or defence-in-depth relevant; unlikely to cause harm alone     |
 
 ---
 
@@ -121,9 +121,11 @@ Copy the block below into your PR description and fill in every field.
 ## New Probe: <LLM{NN}-{NNN}>
 
 ### Summary
+
 <!-- One sentence: what attack technique does this probe test? -->
 
 ### Probe details
+
 - **ID:** LLM{NN}-{NNN}
 - **Category:** LLM{NN} — <category name>
 - **Severity:** critical / high / medium / low
@@ -131,18 +133,22 @@ Copy the block below into your PR description and fill in every field.
 - **Tags:** tag1, tag2, ...
 
 ### Attack technique
+
 <!-- Explain the technique, not the payload text. Why is this a meaningful
      test of a guardrail? What does a failing guardrail reveal? -->
 
 ### Why existing probes don't cover this
+
 <!-- Reference the closest existing probe and explain what is distinct
      about this variant. -->
 
 ### Tested against
+
 <!-- Which backend(s) did you test this probe against? What did you observe?
      Paste the ProbeResult (passed/failed, actual_action, latency_ms). -->
 
 ### Checklist
+
 - [ ] ID is unique (`grep -c "LLM{NN}-{NNN}" guardrail_framework/probes.py` == 1)
 - [ ] `owasp_ref == category.value`
 - [ ] At least 2 tags
@@ -183,9 +189,10 @@ Backend adapters live in [`guardrail_framework/core.py`](guardrail_framework/cor
 
 This project follows the [Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). By participating, you agree to uphold a welcoming, harassment-free environment.
 
-Report violations to: **ashuthemaddy@gmail.com**
+Report violations to: **ashutosh.kumar1089@gmail.com**
 
 In brief:
+
 - Be respectful and constructive in all interactions.
 - Critique ideas, not people.
 - Security researchers are welcome — responsible disclosure applies to this project's own code, not to AI attack payloads submitted as probes (those are the point of the library).

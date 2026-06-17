@@ -18,11 +18,11 @@
 
 ## Why it's different
 
-| Tool | Tests Model | Tests Guardrail Layer | Multi-Backend | Compliance Export |
-|---|:---:|:---:|:---:|:---:|
-| **guardrailprobe** | ✗ | ✓ | ✓ | ✓ |
-| Garak | ✓ | ✗ | ✗ | ✗ |
-| PyRIT | ✓ | ✗ | ✗ | ✗ |
+| Tool               | Tests Model | Tests Guardrail Layer | Multi-Backend | Compliance Export |
+| ------------------ | :---------: | :-------------------: | :-----------: | :---------------: |
+| **guardrailprobe** |      ✗      |           ✓           |       ✓       |         ✓         |
+| Garak              |      ✓      |           ✗           |       ✗       |         ✗         |
+| PyRIT              |      ✓      |           ✗           |       ✗       |         ✗         |
 
 Garak and PyRIT are excellent tools for evaluating a model's own defences. guardrailprobe solves a different problem: verifying that the guardrail **wrapper** your team ships around the model does what it says. You can swap the underlying model without re-running red-team; the guardrail layer is what ships to production.
 
@@ -96,13 +96,13 @@ guardrailprobe scan --backend guardrails_ai --categories LLM01,LLM04,LLM06
 
 ## Supported backends
 
-| Backend | PyPI package | Notes |
-|---|---|---|
-| NeMo Guardrails | `nemoguardrails` | Colang-based rail config auto-compiled from policy |
-| GuardrailsAI | `guardrails-ai` | YAML rail config auto-compiled from policy |
-| Microsoft Presidio | `presidio-analyzer` | PII detection; falls back to regex if SDK absent |
-| Lakera Guard | *(REST API)* | Requires `LAKERA_GUARD_API_KEY` |
-| GA Guard | *(REST API)* | Requires `GA_GUARD_API_URL` + `GA_GUARD_API_KEY` |
+| Backend            | PyPI package        | Notes                                              |
+| ------------------ | ------------------- | -------------------------------------------------- |
+| NeMo Guardrails    | `nemoguardrails`    | Colang-based rail config auto-compiled from policy |
+| GuardrailsAI       | `guardrails-ai`     | YAML rail config auto-compiled from policy         |
+| Microsoft Presidio | `presidio-analyzer` | PII detection; falls back to regex if SDK absent   |
+| Lakera Guard       | _(REST API)_        | Requires `LAKERA_GUARD_API_KEY`                    |
+| GA Guard           | _(REST API)_        | Requires `GA_GUARD_API_URL` + `GA_GUARD_API_KEY`   |
 
 All backends degrade gracefully to regex/keyword heuristics when the SDK is not installed, so you can start testing immediately without installing any optional dependency.
 
@@ -136,7 +136,7 @@ guardrail_framework/
 
 If guardrailprobe saves your team an audit finding, drop a ⭐ — it helps others discover the project.
 
-[github.com/ashuthemaddy/guardrailprobe](https://github.com/ashuthemaddy/guardrailprobe)
+[github.com/askuma/guardrailprobe](https://github.com/askuma/guardrailprobe)
 
 ---
 
