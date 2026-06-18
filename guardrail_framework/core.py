@@ -111,8 +111,9 @@ class GuardrailBackend(str, Enum):
     LAKERA = "lakera"
     GA_GUARD = "ga_guard"
     OPENAI_MODERATION    = "openai_moderation"
-    AZURE_CONTENT_SAFETY = "azure_content_safety"
-    AWS_BEDROCK          = "aws_bedrock"
+    AZURE_CONTENT_SAFETY  = "azure_content_safety"
+    AZURE_PROMPT_SHIELDS  = "azure_prompt_shields"
+    AWS_BEDROCK           = "aws_bedrock"
     CUSTOM = "custom"
 
 
@@ -1320,6 +1321,168 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
         return {"status": "ok", "backend": GuardrailBackend.AZURE_CONTENT_SAFETY.value}
 
 
+# ── Azure Prompt Shields backend ───────────────────────────────────────────────
+
+
+class AzurePromptShieldsBackend(GuardrailBackendInterface):
+    """
+    Azure AI Content Safety — Prompt Shields endpoint.
+
+    Detects prompt injection and jailbreak attacks in user prompts.
+    Reuses the same Azure Content Safety resource as AzureContentSafetyBackend
+    (AZURE_CONTENT_SAFETY_ENDPOINT + AZURE_CONTENT_SAFETY_KEY) — no extra
+    Azure resource needed.
+
+    Gracefully skips (ALLOW pass-through) when the env vars are absent.
+    """
+
+    _API_VERSION = "2024-02-15-preview"
+    _MAX_TEXT_CHARS = 10_000
+
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+
+    def _endpoint(self) -> Optional[str]:
+        return (
+            os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", "").strip()
+            or self.config.get("endpoint")
+            or None
+        )
+
+    def _api_key(self) -> Optional[str]:
+        return (
+            os.getenv("AZURE_CONTENT_SAFETY_KEY", "").strip()
+            or self.config.get("api_key")
+            or None
+        )
+
+    def _call_api(self, text: str) -> Tuple[bool, float, List[Dict]]:
+        """Returns (attack_detected, risk_score, detected_risks)."""
+        endpoint = self._endpoint() or ""
+        api_key  = self._api_key()  or ""
+        safe_text = text[: self._MAX_TEXT_CHARS]
+        url = (
+            f"{endpoint.rstrip('/')}/contentsafety/text:shieldPrompt"
+            f"?api-version={self._API_VERSION}"
+        )
+        payload = json.dumps({"userPrompt": safe_text, "documents": []}).encode()
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Ocp-Apim-Subscription-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read())
+                break
+            except OSError:
+                if attempt == 0:
+                    continue
+                raise
+
+        attack_detected = bool(
+            data.get("userPromptAnalysis", {}).get("attackDetected", False)
+        )
+        risks = []
+        if attack_detected:
+            risks.append({
+                "type": RiskCategory.PROMPT_INJECTION.value,
+                "source": "azure_prompt_shields",
+            })
+
+        return attack_detected, (1.0 if attack_detected else 0.0), risks
+
+    def _skipped_result(self, reason: str) -> GuardrailResult:
+        return GuardrailResult(
+            backend_used=GuardrailBackend.AZURE_PROMPT_SHIELDS,
+            passed=True,
+            action=ActionType.ALLOW,
+            findings={"skipped": True, "reason": reason},
+        )
+
+    def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.AZURE_PROMPT_SHIELDS)
+        if not self._endpoint() or not self._api_key():
+            return self._skipped_result(
+                "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured"
+            )
+        start = time.time()
+        try:
+            flagged, score, risks = self._call_api(text)
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = ActionType.BLOCK
+                result.severity = "critical"
+                from .actions import rewrite_text
+                result.modified_text = rewrite_text(text, risks)
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("Azure Prompt Shields API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Prompt Shields API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.AZURE_PROMPT_SHIELDS)
+        if not self._endpoint() or not self._api_key():
+            return self._skipped_result(
+                "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured"
+            )
+        start = time.time()
+        try:
+            flagged, score, risks = self._call_api(text)
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = ActionType.BLOCK
+                result.severity = "critical"
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("Azure Prompt Shields API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Prompt Shields API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
+                           _context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.AZURE_PROMPT_SHIELDS)
+        blocked, reason = self._check_tools(tool_name)
+        if blocked:
+            result.passed = False
+            result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
+            result.detected_risks.append({
+                "type": RiskCategory.MALICIOUS_TOOL_USE.value,
+                "tool": tool_name,
+                "reason": reason,
+            })
+        return result
+
+    def apply_policy(self, _policy: GuardrailPolicy) -> bool:
+        return True
+
+    def health_check(self) -> Dict[str, Any]:
+        if not self._endpoint() or not self._api_key():
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.AZURE_PROMPT_SHIELDS.value,
+                "reason": "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured",
+            }
+        return {"status": "ok", "backend": GuardrailBackend.AZURE_PROMPT_SHIELDS.value}
+
+
 # ── AWS Bedrock Guardrails backend ─────────────────────────────────────────────
 
 
@@ -1532,6 +1695,7 @@ class GuardrailFramework:
         self.backends[GuardrailBackend.GA_GUARD.value]             = GAGuardBackend({})
         self.backends[GuardrailBackend.OPENAI_MODERATION.value]    = OpenAIModerationBackend({})
         self.backends[GuardrailBackend.AZURE_CONTENT_SAFETY.value] = AzureContentSafetyBackend({})
+        self.backends[GuardrailBackend.AZURE_PROMPT_SHIELDS.value] = AzurePromptShieldsBackend({})
         self.backends[GuardrailBackend.AWS_BEDROCK.value]          = AWSBedrockBackend({})
 
         any_real_sdk = (
