@@ -47,3 +47,9 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+guardrail_data/*.db
+
+# Benchmark CI database (ephemeral, never committed)
+benchmarks/*.db
+benchmarks/*.db-shm
+benchmarks/*.db-wal

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GuardrailProbe — OWASP LLM Top 10 Benchmark</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --red:       #f85149;
+      --amber:     #d29922;
+      --font:      "JetBrains Mono", "Fira Mono", "Cascadia Code", ui-monospace, monospace;
+    }
+
+    html { font-size: 15px; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.6;
+    }
+
+    a             { color: var(--accent); text-decoration: none; }
+    a:hover       { text-decoration: underline; }
+    hr            { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+    .container    { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* ── Header ── */
+    header        { padding: 3rem 0 2rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
+    header h1     { font-size: 2rem; letter-spacing: -0.5px; }
+    header h1 span{ color: var(--accent); }
+    header p      { color: var(--muted); margin-top: 0.5rem; font-size: 0.9rem; max-width: 640px; }
+    .header-links { margin-top: 1rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .header-links a { font-size: 0.85rem; color: var(--muted); }
+    .header-links a:hover { color: var(--accent); }
+
+    /* ── Section headings ── */
+    h2            { font-size: 1.1rem; color: var(--accent); margin-bottom: 1rem; letter-spacing: 0.5px; text-transform: uppercase; }
+    h3            { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.75rem; }
+
+    /* ── Card / surface ── */
+    .card         { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem; }
+
+    /* ── Table ── */
+    table         { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th            { text-align: left; color: var(--muted); border-bottom: 1px solid var(--border); padding: 0.5rem 0.75rem; font-weight: normal; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; }
+    td            { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td   { background: rgba(255,255,255,0.03); }
+
+    /* ── Pass-rate badge ── */
+    .rate         { font-weight: bold; }
+    .rate.green   { color: var(--green); }
+    .rate.amber   { color: var(--amber); }
+    .rate.red     { color: var(--red);   }
+
+    /* ── Buttons ── */
+    .btn          { display: inline-block; padding: 0.35rem 0.85rem; border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; color: var(--muted); font-family: var(--font); cursor: pointer; background: transparent; }
+    .btn:hover    { border-color: var(--accent); color: var(--accent); }
+    .btn-group    { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+
+    /* ── Badge ── */
+    .badge        { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.7rem; font-weight: bold; }
+    .badge.winner { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid var(--green); }
+
+    /* ── Coming soon ── */
+    .coming-soon  { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .coming-soon h3 { font-size: 1.1rem; color: var(--text); margin-bottom: 0.5rem; }
+
+    /* ── Code block ── */
+    pre           { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.25rem; overflow-x: auto; font-size: 0.82rem; color: var(--text); white-space: pre; }
+
+    /* ── Meta line ── */
+    .meta         { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── Footer ── */
+    footer        { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 2rem; padding-bottom: 2rem; color: var(--muted); font-size: 0.8rem; }
+    footer p + p  { margin-top: 0.4rem; }
+
+    /* ── Spinner ── */
+    .loading      { color: var(--muted); font-size: 0.85rem; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      header h1   { font-size: 1.4rem; }
+      .btn-group  { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── Header ── -->
+  <header>
+    <h1><span>guardrail</span>probe</h1>
+    <p>Independent OWASP LLM Top 10 benchmark for AI guardrail backends. Updated monthly.</p>
+    <div class="header-links">
+      <a href="https://github.com/askuma/guardrailprobe" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/guardrailprobe/" target="_blank" rel="noopener">PyPI</a>
+      <a href="../METHODOLOGY.md" target="_blank" rel="noopener">METHODOLOGY.md</a>
+      <a href="../CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+    </div>
+  </header>
+
+  <!-- ── Latest Benchmark ── -->
+  <section id="latest">
+    <h2>Latest Benchmark</h2>
+    <div id="latest-content" class="loading">Loading…</div>
+  </section>
+
+  <hr />
+
+  <!-- ── Archive ── -->
+  <section id="archive">
+    <h2>Benchmark Archive</h2>
+    <div id="archive-content" class="loading">Loading…</div>
+  </section>
+
+  <hr />
+
+  <!-- ── Reproduce ── -->
+  <section id="reproduce">
+    <h2>How to Reproduce</h2>
+    <pre id="reproduce-block">pip install guardrailprobe
+
+python3 -c "
+from guardrail_framework.core import get_framework
+from benchmark_report import BenchmarkRunner
+import datetime
+
+now = datetime.datetime.now()
+runner = BenchmarkRunner(framework=get_framework())
+arts = runner.generate_monthly_benchmark(
+    year=now.year,
+    month=now.month,
+    dry_run=True,    # skips unreachable backends silently
+)
+print('JSON :', arts.json_path)
+print('MD   :', arts.markdown_path)
+"
+
+# Or via CLI:
+python3 benchmark_report.py --dry-run
+python3 benchmark_report.py --year 2026 --month 6</pre>
+  </section>
+
+  <hr />
+
+  <!-- ── Footer ── -->
+  <footer>
+    <p>Apache 2.0 &nbsp;·&nbsp; <a href="https://github.com/askuma/guardrailprobe" target="_blank" rel="noopener">github.com/askuma/guardrailprobe</a></p>
+    <p>Not affiliated with NeMo, Presidio, Lakera, or GuardrailsAI. Results are independent.</p>
+  </footer>
+
+</div><!-- /.container -->
+
+<script>
+(function () {
+  'use strict';
+
+  var INDEX_URL = 'latest_index.json';
+
+  function rateClass(r) {
+    if (r >= 80) return 'green';
+    if (r >= 50) return 'amber';
+    return 'red';
+  }
+
+  function fmtRate(r) {
+    if (r == null) return '—';
+    var cls = rateClass(r);
+    return '<span class="rate ' + cls + '">' + r.toFixed(1) + '%</span>';
+  }
+
+  function backendBadges(backends) {
+    if (!backends || !backends.length) return '—';
+    return backends.join(', ');
+  }
+
+  function renderLatest(latest) {
+    var el = document.getElementById('latest-content');
+    if (!latest) {
+      el.innerHTML = '<div class="card coming-soon">' +
+        '<h3>First benchmark coming soon.</h3>' +
+        '<p>Star the repo to get notified when it drops.</p>' +
+        '<p style="margin-top:1rem"><a href="https://github.com/askuma/guardrailprobe" target="_blank" rel="noopener">github.com/askuma/guardrailprobe ★</a></p>' +
+        '</div>';
+      return;
+    }
+
+    var winner = latest.best_overall || '—';
+    var rate   = latest.best_overall_pass_rate;
+    var backends = (latest.backends_tested || []);
+    var updatedAt = latest.generated_at
+      ? new Date(latest.generated_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })
+      : '—';
+
+    var rows = backends.map(function (b) {
+      return '<tr><td>' + b +
+        (b === winner ? ' <span class="badge winner">winner</span>' : '') +
+        '</td><td>' + fmtRate(b === winner ? rate : null) + '</td></tr>';
+    }).join('');
+
+    var dlButtons = '';
+    if (latest.json_url)     dlButtons += '<a href="' + latest.json_url + '" class="btn" download>JSON</a>';
+    if (latest.pdf_url)      dlButtons += '<a href="' + latest.pdf_url  + '" class="btn" download>PDF</a>';
+    if (latest.markdown_url) dlButtons += '<a href="' + latest.markdown_url + '" class="btn" download>Markdown</a>';
+
+    el.innerHTML =
+      '<div class="card">' +
+        '<h3>' + (latest.month_name || '') + ' ' + (latest.year || '') + '</h3>' +
+        '<table>' +
+          '<thead><tr><th>Backend</th><th>Overall</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>' +
+        (dlButtons ? '<div class="btn-group">' + dlButtons + '</div>' : '') +
+        '<p class="meta" style="margin-top:0.75rem">Last updated: ' + updatedAt + '</p>' +
+      '</div>';
+  }
+
+  function renderArchive(archive) {
+    var el = document.getElementById('archive-content');
+    if (!archive || !archive.length) {
+      el.innerHTML = '<p class="meta">No archived benchmarks yet.</p>';
+      return;
+    }
+
+    var rows = archive.slice().reverse().map(function (entry) {
+      var dlPdf = entry.pdf_url
+        ? '<a href="' + entry.pdf_url + '" class="btn" download>PDF</a>'
+        : '—';
+      var dlJson = entry.json_url
+        ? '<a href="' + entry.json_url + '" class="btn" download>JSON</a>'
+        : '—';
+      var winner = entry.best_overall
+        ? entry.best_overall + (entry.best_overall_pass_rate != null
+            ? ' (' + entry.best_overall_pass_rate.toFixed(1) + '%)'
+            : '')
+        : '—';
+      return '<tr>' +
+        '<td>' + (entry.month_name || '') + ' ' + (entry.year || '') + '</td>' +
+        '<td>' + winner + '</td>' +
+        '<td>' + backendBadges(entry.backends_tested) + '</td>' +
+        '<td style="white-space:nowrap">' + dlPdf + ' ' + dlJson + '</td>' +
+        '</tr>';
+    }).join('');
+
+    el.innerHTML =
+      '<table>' +
+        '<thead><tr><th>Month</th><th>Winner</th><th>Backends</th><th>Download</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>';
+  }
+
+  function load() {
+    fetch(INDEX_URL + '?_=' + Date.now())
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        renderLatest(data.latest   || null);
+        renderArchive(data.archive || []);
+      })
+      .catch(function () {
+        renderLatest(null);
+        renderArchive([]);
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', load);
+})();
+</script>
+</body>
+</html>
