@@ -53,3 +53,6 @@ guardrail_data/*.db
 benchmarks/*.db
 benchmarks/*.db-shm
 benchmarks/*.db-wal
+
+# Repo metadata instructions (set manually on GitHub, then delete)
+REPO_META.md

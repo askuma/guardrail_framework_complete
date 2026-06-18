@@ -70,7 +70,7 @@ Rate limiting fails **open** on Redis unavailability — outages do not block le
 
 ### Network
 
-- Run behind a TLS-terminating reverse proxy (nginx, Caddy) in production — see [SETUP_GUIDE.md](SETUP_GUIDE.md#tls--https)
+- Run behind a TLS-terminating reverse proxy (nginx, Caddy) in production — see [docs/implementation.md](docs/implementation.md)
 - Restrict `/metrics/prometheus` to your Prometheus server's IP at the load-balancer or firewall level
 - Set `GUARDRAIL_CORS_ORIGINS` to your actual frontend origin(s) — do not use `*` in production
 
