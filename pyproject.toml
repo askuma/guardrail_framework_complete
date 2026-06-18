@@ -79,6 +79,11 @@ guardrails_ai = [
     "guardrails-ai>=0.4.0",
 ]
 
+# AWS Bedrock backend
+aws = [
+    "boto3>=1.28.0",
+]
+
 # Cross-replica rate limiting and caching
 redis = [
     "redis>=5.0.0",
@@ -101,7 +106,7 @@ dev = [
 
 # Full install (all optional backends + signing)
 all = [
-    "guardrailprobe[signing,presidio,nemo,guardrails_ai,redis,postgres]",
+    "guardrailprobe[signing,presidio,nemo,guardrails_ai,aws,redis,postgres]",
 ]
 
 [project.urls]
