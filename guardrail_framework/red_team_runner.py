@@ -69,13 +69,14 @@ class ProbeResult:
 
     probe: AttackProbe
     backend: GuardrailBackend
-    actual_action: ActionType
+    actual_action: Optional[ActionType]   # None when preflight credential check failed
     expected_action: ActionType
-    passed: bool            # True when actual_action == expected_action
+    passed: Optional[bool]                # None when preflight credential check failed
     latency_ms: float
     timestamp: str
     raw_response: GuardrailResult
-    skipped: bool = False   # True when backend returned ActionType.SKIPPED
+    skipped: bool = False                 # True when backend returned SKIPPED or creds missing
+    skip_reason: str = ""                 # "MISSING_CREDENTIALS" or empty
 
 
 @dataclass
@@ -109,6 +110,7 @@ class RedTeamReport:
     average_latency_ms: float
     probe_results: List[ProbeResult] = field(default_factory=list)
     skipped_count: int = 0  # probes excluded because backend returned SKIPPED
+    skipped_backends: Dict[str, str] = field(default_factory=dict)  # backend → reason
 
 
 @dataclass
@@ -136,6 +138,7 @@ class ComparisonReport:
     worst_overall: str
     category_winners: Dict[str, str]
     summary_table: List[Dict[str, Any]]
+    skipped_backends: Dict[str, str] = field(default_factory=dict)  # backend → reason
 
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -209,6 +212,41 @@ class RedTeamRunner:
         run_id = str(uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
         active_probes = _filter_probes(probes, categories, severity_filter)
+
+        # Pre-flight credential check — skip all probes if credentials absent.
+        backend_adapter = self._framework.backends.get(backend.value)
+        if backend_adapter is not None and not backend_adapter._check_credentials():
+            skip_reason = "MISSING_CREDENTIALS"
+            now = datetime.now(timezone.utc).isoformat()
+            probe_results = [
+                ProbeResult(
+                    probe=probe,
+                    backend=backend,
+                    actual_action=None,
+                    expected_action=probe.expected_action,
+                    passed=None,
+                    latency_ms=0.0,
+                    timestamp=now,
+                    raw_response=GuardrailResult(
+                        backend_used=backend,
+                        action=ActionType.SKIPPED,
+                        findings={"skipped": True, "reason": skip_reason},
+                    ),
+                    skipped=True,
+                    skip_reason=skip_reason,
+                )
+                for probe in active_probes
+            ]
+            report = _build_report(
+                backend, run_id, timestamp, probe_results,
+                skipped_backends={backend.value: skip_reason},
+            )
+            self._reports[run_id] = report
+            logger.info(
+                "Red-team run %s SKIPPED | backend=%s | reason=%s",
+                run_id, backend.value, skip_reason,
+            )
+            return report
 
         logger.info(
             "Red-team run %s starting | backend=%s | probes=%d",
@@ -287,6 +325,10 @@ class RedTeamRunner:
         best_overall = max(ranked, key=lambda k: ranked[k].pass_rate)
         worst_overall = min(ranked, key=lambda k: ranked[k].pass_rate)
 
+        all_skipped: Dict[str, str] = {}
+        for r in reports.values():
+            all_skipped.update(r.skipped_backends)
+
         comparison = ComparisonReport(
             run_id=run_id,
             timestamp=timestamp,
@@ -296,6 +338,7 @@ class RedTeamRunner:
             worst_overall=worst_overall,
             category_winners=_compute_category_winners(reports),
             summary_table=_build_summary_table(reports),
+            skipped_backends=all_skipped,
         )
         self._comparison_reports[run_id] = comparison
         return comparison
@@ -506,6 +549,7 @@ def _build_report(
     run_id: str,
     timestamp: str,
     probe_results: List[ProbeResult],
+    skipped_backends: Optional[Dict[str, str]] = None,
 ) -> RedTeamReport:
     n_skipped = sum(1 for pr in probe_results if pr.skipped)
     active = [pr for pr in probe_results if not pr.skipped]
@@ -556,6 +600,7 @@ def _build_report(
         average_latency_ms=round(avg_latency, 2),
         probe_results=probe_results,
         skipped_count=n_skipped,
+        skipped_backends=skipped_backends or {},
     )
 
 
@@ -615,8 +660,8 @@ def _diff_row(
         "severity": baseline.probe.severity,
         "description": baseline.probe.description,
         "tags": baseline.probe.tags,
-        "baseline_action": baseline.actual_action.value,
-        "current_action": current.actual_action.value,
+        "baseline_action": baseline.actual_action.value if baseline.actual_action else "skipped",
+        "current_action": current.actual_action.value if current.actual_action else "skipped",
         "expected_action": baseline.probe.expected_action.value,
         "baseline_latency_ms": baseline.latency_ms,
         "current_latency_ms": current.latency_ms,

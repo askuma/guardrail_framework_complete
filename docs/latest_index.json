@@ -1,4 +1,38 @@
 {
-  "latest": null,
-  "archive": []
+  "latest": {
+    "year": 2026,
+    "month": 6,
+    "month_name": "June",
+    "run_id": "fd158288-2325-4ebd-8900-bfef33f97b3a",
+    "generated_at": "2026-06-18T11:49:07.648485+00:00",
+    "backends_tested": [
+      "nemo",
+      "guardrails_ai",
+      "presidio"
+    ],
+    "best_overall": "nemo",
+    "best_overall_pass_rate": 9.0,
+    "json_url": "../benchmarks/benchmark_2026_06.json",
+    "markdown_url": "../benchmarks/benchmark_2026_06.md",
+    "pdf_url": null
+  },
+  "archive": [
+    {
+      "year": 2026,
+      "month": 6,
+      "month_name": "June",
+      "run_id": "fd158288-2325-4ebd-8900-bfef33f97b3a",
+      "generated_at": "2026-06-18T11:49:07.648485+00:00",
+      "backends_tested": [
+        "nemo",
+        "guardrails_ai",
+        "presidio"
+      ],
+      "best_overall": "nemo",
+      "best_overall_pass_rate": 9.0,
+      "json_url": "../benchmarks/benchmark_2026_06.json",
+      "markdown_url": "../benchmarks/benchmark_2026_06.md",
+      "pdf_url": null
+    }
+  ]
 }
