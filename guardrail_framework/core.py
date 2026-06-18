@@ -723,8 +723,8 @@ class LakeraGuardBackend(GuardrailBackendInterface):
     Falls back to fail-closed when the API key is absent.
     """
 
-    _INPUT_URL  = "https://api.lakera.ai/v1/guard"
-    _OUTPUT_URL = "https://api.lakera.ai/v1/guard"
+    _INPUT_URL  = "https://api.lakera.ai/v2/guard"
+    _OUTPUT_URL = "https://api.lakera.ai/v2/guard"
 
     def _api_key(self) -> Optional[str]:
         return os.getenv("LAKERA_GUARD_API_KEY", "").strip() or self.config.get("api_key") or None
