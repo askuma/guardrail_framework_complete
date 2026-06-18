@@ -19,9 +19,11 @@ import argparse
 import calendar
 import json
 import logging
-import math
 import os
 import sys
+
+from dotenv import load_dotenv
+load_dotenv()
 import traceback
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -30,12 +32,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import uuid4
-
 # ── Framework imports ──────────────────────────────────────────────────────────
 
 from guardrail_framework.core import (
-    ActionType,
     GuardrailBackend,
     GuardrailFramework,
     get_framework,
@@ -79,8 +78,10 @@ class BenchmarkArtifacts:
     markdown_path: str
     comparison_report: Optional[ComparisonReport]
     delta: Optional[Dict[str, Any]]
-    backends_skipped: List[GuardrailBackend] = field(default_factory=list)
-    backends_pending: List[str] = field(default_factory=list)
+    backends_tested: List[str] = field(default_factory=list)
+    backends_skipped: Dict[str, str] = field(default_factory=dict)
+    probe_count: int = 0
+    generated_at: Optional[datetime] = None
 
 
 # ── Serialisation helpers ──────────────────────────────────────────────────────
@@ -156,18 +157,17 @@ class BenchmarkRunner:
         dry_run: bool = False,
         output_dir: Optional[Path] = None,
     ) -> BenchmarkArtifacts:
-        """Detect reachable backends, run all probes, write artifacts.
+        """Run all probes against all backends, write artifacts.
 
         Parameters
         ----------
         year, month:
             Target reporting period.
         backends:
-            Explicit list of backends to attempt.  Defaults to all five
-            standard backends (everything except CUSTOM).
+            Explicit list of backends to attempt.  Defaults to all nine
+            registered backends.
         dry_run:
-            When True, unreachable backends are silently skipped and no
-            error is raised if none are reachable.
+            When True, no error is raised if all backends are skipped.
         output_dir:
             Directory for artifact files.  Defaults to /app/benchmarks/
             (container) or ./benchmarks/ (local).
@@ -175,61 +175,51 @@ class BenchmarkRunner:
         out_dir = Path(output_dir) if output_dir else self._default_output
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        candidate_backends = backends or _TESTABLE_BACKENDS
-        run_id = str(uuid4())
-        logger.info("Benchmark run %s  (%04d-%02d)  dry_run=%s", run_id, year, month, dry_run)
+        all_backends = backends or [b for b in GuardrailBackend if b is not GuardrailBackend.CUSTOM]
+        now = datetime.now(timezone.utc)
+        logger.info("Benchmark run (%04d-%02d)  backends=%s  dry_run=%s",
+                    year, month, [b.value for b in all_backends], dry_run)
 
-        reachable, skipped_reasons = self._detect_reachable_backends(candidate_backends)
-        skipped_backends = [b for b in candidate_backends if b not in reachable]
-        pending_detail = [
-            {
-                "backend": bv,
-                "reason":  reason,
-                "note":    _pending_note(reason),
-            }
-            for bv, reason in skipped_reasons
+        comparison = self._runner.compare_backends(backends=all_backends, categories=None)
+
+        backends_tested = [
+            b.value for b in comparison.backends_tested
+            if b.value not in comparison.skipped_backends
         ]
+        backends_skipped = dict(comparison.skipped_backends)
+        probe_count = sum(r.total_probes for r in comparison.reports.values())
+
+        if not backends_tested and not dry_run:
+            raise RuntimeError(
+                "No backends returned results — all were skipped. "
+                f"Skipped: {list(backends_skipped.keys())}. "
+                "Set dry_run=True to proceed anyway."
+            )
 
         stem = f"benchmark_{year:04d}_{month:02d}"
         artifacts = BenchmarkArtifacts(
             year=year,
             month=month,
-            run_id=run_id,
+            run_id=comparison.run_id,
             pdf_path=None,
             json_path=str(out_dir / f"{stem}.json"),
             markdown_path=str(out_dir / f"{stem}.md"),
-            comparison_report=None,
+            comparison_report=comparison,
             delta=None,
-            backends_skipped=skipped_backends,
-            backends_pending=[p["backend"] for p in pending_detail],
+            backends_tested=backends_tested,
+            backends_skipped=backends_skipped,
+            probe_count=probe_count,
+            generated_at=now,
         )
-
-        if not reachable:
-            if dry_run:
-                logger.warning("No reachable backends — writing empty artifact stubs")
-                self._write_empty_artifacts(artifacts, pending_detail, year, month)
-                return artifacts
-            raise RuntimeError(
-                "No reachable backends found. "
-                f"Skipped: {[b.value for b in skipped_backends]}. "
-                "Set dry_run=True to proceed anyway."
-            )
-
-        logger.info("Running probes against: %s", [b.value for b in reachable])
-        comparison = self._runner.compare_backends(backends=reachable, categories=None)
-        artifacts.comparison_report = comparison
-        artifacts.run_id = comparison.run_id
 
         prior_path = out_dir / _prior_month_filename(year, month)
         if prior_path.exists():
             try:
-                artifacts.delta = self._compute_month_over_month_delta(
-                    comparison, str(prior_path)
-                )
+                artifacts.delta = self._compute_delta(comparison, year, month, out_dir)
             except Exception as exc:
                 logger.warning("Month-over-month delta failed: %s", exc)
 
-        self._generate_artifacts(artifacts, comparison, artifacts.delta, pending_detail)
+        self._generate_artifacts(artifacts, comparison, artifacts.delta, [])
         self._update_docs_index(artifacts)
 
         logger.info(
@@ -322,6 +312,94 @@ class BenchmarkRunner:
 
     # ── Month-over-month delta ─────────────────────────────────────────────────
 
+    def _compute_delta(
+        self,
+        current: ComparisonReport,
+        year: int,
+        month: int,
+        out_dir: Path,
+    ) -> Optional[Dict[str, Any]]:
+        """Compute structured month-over-month delta in spec format."""
+        prior_path = out_dir / _prior_month_filename(year, month)
+        if not prior_path.exists():
+            return None
+
+        try:
+            prior_data: Dict[str, Any] = json.loads(prior_path.read_text())
+        except Exception:
+            return None
+
+        prior_summaries: Dict[str, Any] = (
+            prior_data.get("results", {}).get("backend_summaries", {})
+        )
+        prior_meta: Dict[str, Any] = prior_data.get("metadata", {})
+        prior_backends: set = set(prior_meta.get("backends_tested", []))
+        prior_probe_count: int = prior_meta.get("probe_count", 0)
+
+        active_backends = {
+            b.value for b in current.backends_tested
+            if b.value not in current.skipped_backends
+        }
+
+        per_backend: Dict[str, Dict[str, Any]] = {}
+        improvements: List[Dict[str, Any]] = []
+        regressions: List[Dict[str, Any]] = []
+
+        for bname in sorted(active_backends):
+            r = current.reports.get(bname)
+            if not r:
+                continue
+            current_pct = round(r.pass_rate * 100, 2)
+            prior_rec = prior_summaries.get(bname, {})
+            prior_pct_raw = prior_rec.get("pass_rate")
+
+            if prior_pct_raw is not None:
+                prior_pct_f: float = round(float(prior_pct_raw) * 100, 2)
+                prior_pct: Optional[float] = prior_pct_f
+                delta_pct = round(current_pct - prior_pct_f, 2)
+                if delta_pct >= 5:
+                    status = "improvement"
+                    improvements.append({"backend": bname, "delta": delta_pct})
+                elif delta_pct <= -5:
+                    status = "regression"
+                    regressions.append({"backend": bname, "delta": delta_pct})
+                else:
+                    status = "stable"
+            else:
+                prior_pct = None
+                delta_pct = 0.0
+                status = "new"
+
+            per_backend[bname] = {
+                "delta": delta_pct,
+                "current": current_pct,
+                "prior": prior_pct,
+                "status": status,
+            }
+
+        improvements.sort(key=lambda x: x["delta"], reverse=True)
+        regressions.sort(key=lambda x: x["delta"])
+
+        current_probe_count = (
+            sum(r.total_probes for r in current.reports.values())
+            // max(len(current.reports), 1)
+        )
+
+        if month == 1:
+            prior_year, prior_month_num = year - 1, 12
+        else:
+            prior_year, prior_month_num = year, month - 1
+
+        return {
+            "prior_month": f"{prior_year}-{prior_month_num:02d}",
+            "per_backend": per_backend,
+            "best_improvement": improvements[0] if improvements else None,
+            "worst_regression": regressions[0] if regressions else None,
+            "new_probes_added": max(0, current_probe_count - prior_probe_count),
+            "backends_added": sorted(active_backends - prior_backends),
+            "backends_removed": sorted(prior_backends - active_backends),
+        }
+
     def _compute_month_over_month_delta(
         self,
         current: ComparisonReport,
@@ -407,16 +485,28 @@ class BenchmarkRunner:
         )
 
         # ── JSON ──────────────────────────────────────────────────────────────
-        json_payload = {
+        _first_report = next((r for r in comparison.reports.values() if r.total_probes > 0), None)
+        owasp_probe_count = 0
+        cm_probe_count = 0
+        if _first_report:
+            for _pr in _first_report.probe_results:
+                if _pr.probe.id.startswith("CM-"):
+                    cm_probe_count += 1
+                else:
+                    owasp_probe_count += 1
+
+        json_payload: Dict[str, Any] = {
             "metadata": {
                 "report_title": f"GuardrailProbe Benchmark — {calendar.month_name[month]} {year}",
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": (artifacts.generated_at or datetime.now(timezone.utc)).isoformat(),
                 "run_id": comparison.run_id,
                 "probe_library_version": PROBE_LIBRARY_VERSION,
+                "guardrailprobe_version": PROBE_LIBRARY_VERSION,
                 "probe_count": probe_count,
-                "backends_tested": [b.value for b in comparison.backends_tested],
-                "backends_skipped": [b.value for b in artifacts.backends_skipped],
-                "backends_pending": pending_detail,
+                "owasp_probe_count": owasp_probe_count,
+                "content_moderation_probe_count": cm_probe_count,
+                "backends_tested": artifacts.backends_tested,
+                "backends_skipped": artifacts.backends_skipped,
             },
             "results": _serialise_comparison(comparison),
             "delta": delta,
@@ -459,8 +549,7 @@ class BenchmarkRunner:
                 "probe_library_version": PROBE_LIBRARY_VERSION,
                 "probe_count": 0,
                 "backends_tested": [],
-                "backends_skipped": [b.value for b in artifacts.backends_skipped],
-                "backends_pending": pending_detail,
+                "backends_skipped": artifacts.backends_skipped,
             },
             "results": {},
             "delta": None,
@@ -487,6 +576,7 @@ class BenchmarkRunner:
         if not self._docs_index.parent.exists():
             return  # docs/ not present — running outside repo root
 
+        index: Dict[str, Any]
         try:
             with open(self._docs_index) as fh:
                 index = json.load(fh)
@@ -500,26 +590,29 @@ class BenchmarkRunner:
             "month_name":    calendar.month_name[artifacts.month],
             "run_id":        artifacts.run_id,
             "generated_at":  datetime.now(timezone.utc).isoformat(),
-            "backends_tested": [b.value for b in cr.backends_tested] if cr else [],
+            "backends_tested": artifacts.backends_tested,
             "best_overall":  cr.best_overall if cr else None,
-            "best_overall_pass_rate": (
-                round(cr.reports[cr.best_overall].pass_rate * 100, 1) if cr else None
+            "best_score": (
+                round(cr.reports[cr.best_overall].pass_rate * 100, 1)
+                if (cr and cr.best_overall and cr.best_overall in cr.reports) else None
             ),
+            "probe_count":   artifacts.probe_count,
+            "backends_skipped": artifacts.backends_skipped,
             "json_url":     (
-                f"../benchmarks/benchmark_{artifacts.year:04d}_{artifacts.month:02d}.json"
+                f"benchmarks/benchmark_{artifacts.year:04d}_{artifacts.month:02d}.json"
             ),
             "markdown_url": (
-                f"../benchmarks/benchmark_{artifacts.year:04d}_{artifacts.month:02d}.md"
+                f"benchmarks/benchmark_{artifacts.year:04d}_{artifacts.month:02d}.md"
             ),
             "pdf_url": (
-                f"../benchmarks/benchmark_{artifacts.year:04d}_{artifacts.month:02d}.pdf"
+                f"benchmarks/benchmark_{artifacts.year:04d}_{artifacts.month:02d}.pdf"
                 if artifacts.pdf_path else None
             ),
         }
 
-        index["latest"] = meta
+        index["latest"] = meta  # type: ignore[assignment]
         # Replace any existing entry for the same month
-        index["archive"] = [
+        index["archive"] = [  # type: ignore[assignment]
             e for e in index.get("archive", [])
             if not (e.get("year") == artifacts.year and e.get("month") == artifacts.month)
         ]
@@ -554,14 +647,14 @@ def _render_markdown(
     regression_backend  = "none this month"
     regression_delta    = "0.0"
     if delta:
-        imps = delta.get("improvements", []) or []
-        regs = delta.get("regressions",  []) or []
-        if imps:
-            improvement_backend = imps[0]["backend"]
-            improvement_delta   = f"{imps[0]['change'] * 100:.1f}"
-        if regs:
-            regression_backend = regs[0]["backend"]
-            regression_delta   = f"{abs(regs[0]['change'] * 100):.1f}"
+        bi = delta.get("best_improvement")
+        wr = delta.get("worst_regression")
+        if bi:
+            improvement_backend = bi["backend"]
+            improvement_delta   = f"{bi['delta']:.1f}"
+        if wr:
+            regression_backend = wr["backend"]
+            regression_delta   = f"{abs(wr['delta']):.1f}"
 
     subs: Dict[str, str] = {
         "{MONTH}":                   month_name,
@@ -603,12 +696,12 @@ def _render_markdown(
 
 
 def _tm_ratio_winner(comparison: ComparisonReport) -> str:
-    """Backend with the best pass_rate / log10(latency + 10) ratio."""
+    """Backend with the best pass_rate * 1000 / avg_latency_ms ratio."""
     best_ratio, winner = -1.0, "—"
     for bname, r in comparison.reports.items():
         if bname in comparison.skipped_backends or r.average_latency_ms <= 0:
             continue
-        ratio = (r.pass_rate * 100) / math.log10(r.average_latency_ms + 10)
+        ratio = r.pass_rate * 1000 / max(r.average_latency_ms, 1)
         if ratio > best_ratio:
             best_ratio, winner = ratio, bname
     return winner
@@ -627,12 +720,12 @@ def _tm_overall_rows(comparison: ComparisonReport, delta: Optional[Dict]) -> str
             continue
         vs_last = "—"
         if delta:
-            bd = (delta.get("backend_delta") or {}).get(bname, {})
-            ch = bd.get("change")
-            if ch is not None:
-                sign = "+" if ch >= 0 else ""
-                flag = " 🔴" if ch <= -0.05 else (" 🟢" if ch >= 0.05 else "")
-                vs_last = f"{sign}{ch * 100:.1f}%{flag}"
+            per_b = (delta.get("per_backend") or {}).get(bname, {})
+            d = per_b.get("delta")
+            if d is not None:
+                sign = "+" if d >= 0 else ""
+                flag = " 🔴" if d <= -5 else (" 🟢" if d >= 5 else "")
+                vs_last = f"{sign}{d:.1f}%{flag}"
         cats = r.results_by_category
         best_cat  = max(cats, key=lambda c: cats[c].get("pass_rate", 0)) if cats else "—"
         worst_cat = min(cats, key=lambda c: cats[c].get("pass_rate", 1)) if cats else "—"
@@ -738,33 +831,34 @@ def _tm_delta_section(delta: Optional[Dict]) -> str:
     if delta is None:
         return "First benchmark — no prior month comparison available."
     lines: List[str] = []
-    new_probes = delta.get("new_probes_total", 0)
+    new_probes = delta.get("new_probes_added", 0)
     if new_probes:
         lines.append(f"**{new_probes} new probes** added since last month.\n")
-    imps = delta.get("improvements", []) or []
-    regs = delta.get("regressions",  []) or []
-    if imps:
-        lines.append("**Improvements (>5%):**\n")
-        for b in imps:
-            lines.append(f"- {b['backend']}: +{b['change'] * 100:.1f}%")
-        lines.append("")
-    if regs:
-        lines.append("**Regressions (>5%):**\n")
-        for b in regs:
-            lines.append(f"- {b['backend']}: {b['change'] * 100:.1f}%")
-        lines.append("")
-    bd = delta.get("backend_delta") or {}
-    if bd:
+    bi = delta.get("best_improvement")
+    wr = delta.get("worst_regression")
+    if bi:
+        lines.append(f"**Best improvement:** {bi['backend']} +{bi['delta']:.1f}%\n")
+    if wr:
+        lines.append(f"**Worst regression:** {wr['backend']} {wr['delta']:.1f}%\n")
+    per_b = delta.get("per_backend") or {}
+    if per_b:
         lines += [
             "**All backend changes:**\n",
-            "| Backend | Previous | Current | Change |",
-            "|---------|----------|---------|--------|",
+            "| Backend | Previous | Current | Change | Status |",
+            "|---------|----------|---------|--------|--------|",
         ]
-        for bname, data in bd.items():
-            prev   = f"{data['prior'] * 100:.1f}%" if data.get("prior") is not None else "—"
-            curr   = f"{data['current'] * 100:.1f}%"
-            change = f"{data['change'] * 100:+.1f}%" if data.get("change") is not None else "—"
-            lines.append(f"| {bname} | {prev} | {curr} | {change} |")
+        for bname, data in per_b.items():
+            prev   = f"{data['prior']:.1f}%" if data.get("prior") is not None else "—"
+            curr   = f"{data['current']:.1f}%"
+            chg    = f"{data['delta']:+.1f}%" if data.get("delta") is not None else "—"
+            status = data.get("status", "—")
+            lines.append(f"| {bname} | {prev} | {curr} | {chg} | {status} |")
+    new_b = delta.get("backends_added") or []
+    rem_b = delta.get("backends_removed") or []
+    if new_b:
+        lines.append(f"\n**New backends:** {', '.join(new_b)}")
+    if rem_b:
+        lines.append(f"**Removed backends:** {', '.join(rem_b)}")
     return "\n".join(lines) or "No significant changes from prior month."
 
 

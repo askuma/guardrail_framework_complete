@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re as _re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -983,6 +984,15 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
 
     _API_URL = "https://api.openai.com/v1/moderations"
 
+    # Class-level throttle: enforce minimum gap between requests to stay
+    # under OpenAI's free-tier rate limit (60 RPM = 1 req/s).
+    _last_call: float = 0.0
+    _call_lock: threading.Lock = threading.Lock()
+    _MIN_CALL_INTERVAL: float = 1.1  # seconds; keeps RPM ≤ 54 (safely under 60)
+    # Circuit-breaker: set True when quota is confirmed exhausted (5 retries
+    # all failed with 429) — skips further API calls for this process lifetime.
+    _quota_exhausted: bool = False
+
     # Maps OpenAI moderation categories to internal RiskCategory values.
     # Sub-categories inherit the parent mapping.
     _CATEGORY_MAP: Dict[str, "RiskCategory"] = {
@@ -1019,12 +1029,28 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
         r.findings = {"skipped": True, "reason": reason}
         return r
 
+    def _throttle(self) -> None:
+        """Block until the minimum inter-request interval has elapsed."""
+        with self._call_lock:
+            now = time.monotonic()
+            gap = self._MIN_CALL_INTERVAL - (now - OpenAIModerationBackend._last_call)
+            if gap > 0:
+                time.sleep(gap)
+            OpenAIModerationBackend._last_call = time.monotonic()
+
     def _call_api(self, text: str) -> Tuple[bool, float, List[Dict]]:
         """Returns (flagged, max_category_score, detected_risks).
 
-        Retries up to 3 times on HTTP 429 with exponential back-off (1 s, 2 s,
-        4 s) to handle free-tier rate limits gracefully.
+        Enforces a minimum inter-request interval to stay under the free-tier
+        rate limit (60 RPM), and respects the Retry-After header on 429s with
+        up to 5 retries.
         """
+        if OpenAIModerationBackend._quota_exhausted:
+            raise urllib.error.HTTPError(
+                self._API_URL, 429, "quota exhausted (circuit open)", {}, None  # type: ignore[arg-type]
+            )
+
+        self._throttle()
         payload = json.dumps({"input": text}).encode()
         req = urllib.request.Request(
             self._API_URL,
@@ -1034,22 +1060,35 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
                 "Content-Type": "application/json",
             },
         )
-        max_retries = 3
+        max_retries = 5
         for attempt in range(max_retries):
             try:
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     data = json.loads(resp.read())
                 break  # success — exit retry loop
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 and attempt < max_retries - 1:
-                    wait = 2 ** attempt          # 1 s, 2 s, 4 s
-                    self.logger.warning(
-                        "OpenAI Moderation 429 rate-limited — retrying in %ds (attempt %d/%d)",
-                        wait, attempt + 1, max_retries,
-                    )
-                    time.sleep(wait)
-                    continue
-                raise  # non-429 or final attempt — propagate
+                if exc.code == 429:
+                    if attempt < max_retries - 1:
+                        retry_after = exc.headers.get("Retry-After") or exc.headers.get("retry-after")
+                        try:
+                            wait = float(retry_after) + 0.5 if retry_after else min(2 ** (attempt + 1), 60)
+                        except (ValueError, TypeError):
+                            wait = min(2 ** (attempt + 1), 60)
+                        self.logger.warning(
+                            "OpenAI Moderation 429 — waiting %.1fs (attempt %d/%d)",
+                            wait, attempt + 1, max_retries,
+                        )
+                        time.sleep(wait)
+                        continue
+                    else:
+                        # All retries exhausted — open the circuit breaker.
+                        OpenAIModerationBackend._quota_exhausted = True
+                        self.logger.error(
+                            "OpenAI Moderation quota exhausted after %d retries — "
+                            "skipping remaining probes for this run",
+                            max_retries,
+                        )
+                raise  # non-429 or final 429 — propagate
 
         item = data.get("results", [{}])[0]
         flagged = bool(item.get("flagged", False))
@@ -1071,10 +1110,10 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
         return flagged, max_score, risks
 
     def _check_credentials(self) -> bool:
-        return bool(self._api_key())
+        return bool(self._api_key()) and not OpenAIModerationBackend._quota_exhausted
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
-        if not self._api_key():
+        if not self._api_key() or OpenAIModerationBackend._quota_exhausted:
             return self._skipped_result()
         result = GuardrailResult(backend_used=GuardrailBackend.OPENAI_MODERATION)
         start = time.time()
@@ -1697,7 +1736,7 @@ class AWSBedrockBackend(GuardrailBackendInterface):
         ))
 
     def _check_credentials(self) -> bool:
-        return self._creds_present()
+        return _BOTO3_SDK and self._creds_present()
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._creds_present():

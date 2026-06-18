@@ -1,8 +1,16 @@
 # Required GitHub Secrets:
-# LAKERA_GUARD_API_KEY   — from platform.lakera.ai
-# GA_GUARD_API_KEY       — from your GA Guard provider
-# GA_GUARD_API_URL       — GA Guard endpoint URL
-# NEMO_ANTHROPIC_API_KEY — from console.anthropic.com
+# LAKERA_GUARD_API_KEY              — from platform.lakera.ai
+# GA_GUARD_API_KEY                  — from your GA Guard provider
+# GA_GUARD_API_URL                  — GA Guard endpoint URL
+# NEMO_ANTHROPIC_API_KEY            — from console.anthropic.com
+# OPENAI_API_KEY                    — from platform.openai.com
+# AZURE_CONTENT_SAFETY_ENDPOINT     — Azure cognitive services endpoint URL
+# AZURE_CONTENT_SAFETY_KEY          — Azure cognitive services key
+# AWS_ACCESS_KEY_ID                 — IAM key with Bedrock:ApplyGuardrail permission
+# AWS_SECRET_ACCESS_KEY             — IAM secret
+# AWS_DEFAULT_REGION                — e.g. us-east-1
+# AWS_BEDROCK_GUARDRAIL_ID          — Bedrock guardrail resource ID
+# AWS_BEDROCK_GUARDRAIL_VERSION     — e.g. DRAFT or a version number
 
 name: Monthly Benchmark
 
@@ -34,12 +42,20 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      LAKERA_GUARD_API_KEY:   ${{ secrets.LAKERA_GUARD_API_KEY }}
-      GA_GUARD_API_KEY:       ${{ secrets.GA_GUARD_API_KEY }}
-      GA_GUARD_API_URL:       ${{ secrets.GA_GUARD_API_URL }}
-      NEMO_ANTHROPIC_API_KEY: ${{ secrets.NEMO_ANTHROPIC_API_KEY }}
-      GUARDRAIL_AUTH_ENABLED: "false"
-      GUARDRAIL_DB_URL:       "sqlite:///./benchmarks/benchmark.db"
+      LAKERA_GUARD_API_KEY:              ${{ secrets.LAKERA_GUARD_API_KEY }}
+      GA_GUARD_API_KEY:                  ${{ secrets.GA_GUARD_API_KEY }}
+      GA_GUARD_API_URL:                  ${{ secrets.GA_GUARD_API_URL }}
+      NEMO_ANTHROPIC_API_KEY:            ${{ secrets.NEMO_ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY:                    ${{ secrets.OPENAI_API_KEY }}
+      AZURE_CONTENT_SAFETY_ENDPOINT:     ${{ secrets.AZURE_CONTENT_SAFETY_ENDPOINT }}
+      AZURE_CONTENT_SAFETY_KEY:          ${{ secrets.AZURE_CONTENT_SAFETY_KEY }}
+      AWS_ACCESS_KEY_ID:                 ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY:             ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:                ${{ secrets.AWS_DEFAULT_REGION }}
+      AWS_BEDROCK_GUARDRAIL_ID:          ${{ secrets.AWS_BEDROCK_GUARDRAIL_ID }}
+      AWS_BEDROCK_GUARDRAIL_VERSION:     ${{ secrets.AWS_BEDROCK_GUARDRAIL_VERSION }}
+      GUARDRAIL_AUTH_ENABLED:            "false"
+      GUARDRAIL_DB_URL:                  "sqlite:///./benchmarks/benchmark.db"
 
     steps:
       - name: Checkout repository
@@ -82,7 +98,7 @@ jobs:
           python3 benchmark_report.py \
             --year  "${{ steps.period.outputs.year }}"  \
             --month "${{ steps.period.outputs.month }}" \
-            --dry-run "${{ inputs.dry_run || 'false' }}" \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }} \
             --output-dir ./benchmarks/
 
       - name: Commit benchmark artifacts
@@ -152,7 +168,7 @@ jobs:
                 '   pip install -e ".[dev]"',
                 '   python3 benchmark_report.py --year ${{ steps.period.outputs.year }} --month ${{ steps.period.outputs.month }} --dry-run',
                 '   ```',
-                '3. Verify secrets are configured: `LAKERA_GUARD_API_KEY`, `GA_GUARD_API_KEY`, `GA_GUARD_API_URL`, `NEMO_ANTHROPIC_API_KEY`.',
+                '3. Verify secrets are configured: `LAKERA_GUARD_API_KEY`, `GA_GUARD_API_KEY`, `GA_GUARD_API_URL`, `NEMO_ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_CONTENT_SAFETY_ENDPOINT`, `AZURE_CONTENT_SAFETY_KEY`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BEDROCK_GUARDRAIL_ID`, `AWS_BEDROCK_GUARDRAIL_VERSION`.',
               ].join('\n'),
               labels: ['bug', 'automated'],
             });

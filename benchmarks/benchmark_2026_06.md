@@ -5,15 +5,15 @@
 ---
 
 ## TL;DR
-- **Winner:** nemo (9.0% overall)
-- **Best accuracy/latency ratio:** nemo
+- **Winner:** openai_moderation (100.0% overall)
+- **Best accuracy/latency ratio:** openai_moderation
 - **Biggest improvement vs last month:** none this month +0.0%
 - **Biggest regression vs last month:** none this month -0.0%
-- **Backends tested:** 3
+- **Backends tested:** 1
 - **Backends skipped:** 0
-- **Total probes run:** 234
-- **Report generated:** 2026-06-18 11:49 UTC
-- **Run ID:** fd158288-2325-4ebd-8900-bfef33f97b3a
+- **Total probes run:** 1
+- **Report generated:** 2026-06-18 15:21 UTC
+- **Run ID:** da5d0b66-826f-4ae1-a566-07a659d376e2
 
 ---
 
@@ -21,9 +21,7 @@
 
 | Backend | Overall % | vs Last Month | Best Category | Worst Category | Avg Latency |
 |---------|:---------:|:-------------:|:-------------:|:--------------:|:-----------:|
-| nemo | 9.0% | — | LLM01 | LLM03 | 1 ms |
-| guardrails_ai | 9.0% | — | LLM01 | LLM03 | 61 ms |
-| presidio | 6.4% | — | LLM02 | LLM01 | 50 ms |
+| openai_moderation | 100.0% | — | LLM01 | LLM01 | 32612 ms |
 
 ---
 
@@ -31,16 +29,16 @@
 
 | Category | Description | Winner | Score | Runner-up | Score |
 |----------|-------------|:------:|:-----:|:---------:|:-----:|
-| LLM01 | Prompt Injection | nemo | 43% | guardrails_ai | 43% |
-| LLM02 | Insecure Output | presidio | 19% | nemo | 10% |
-| LLM03 | Training Data Poisoning | nemo | 0% | guardrails_ai | 0% |
-| LLM04 | Model DoS | nemo | 0% | guardrails_ai | 0% |
-| LLM05 | Supply Chain | nemo | 0% | guardrails_ai | 0% |
-| LLM06 | Sensitive Info Disclosure | nemo | 0% | guardrails_ai | 0% |
-| LLM07 | Insecure Plugin | nemo | 33% | guardrails_ai | 33% |
-| LLM08 | Excessive Agency | nemo | 0% | guardrails_ai | 0% |
-| LLM09 | Overreliance | nemo | 0% | guardrails_ai | 0% |
-| LLM10 | Model Theft | nemo | 0% | guardrails_ai | 0% |
+| LLM01 | Prompt Injection | openai_moderation | 100% | — | —% |
+| LLM02 | Insecure Output | openai_moderation | 0% | — | —% |
+| LLM03 | Training Data Poisoning | openai_moderation | 0% | — | —% |
+| LLM04 | Model DoS | openai_moderation | 0% | — | —% |
+| LLM05 | Supply Chain | openai_moderation | 0% | — | —% |
+| LLM06 | Sensitive Info Disclosure | openai_moderation | 0% | — | —% |
+| LLM07 | Insecure Plugin | openai_moderation | 0% | — | —% |
+| LLM08 | Excessive Agency | openai_moderation | 0% | — | —% |
+| LLM09 | Overreliance | openai_moderation | 0% | — | —% |
+| LLM10 | Model Theft | openai_moderation | 0% | — | —% |
 
 ---
 
@@ -52,9 +50,7 @@ expected to score higher here than on OWASP probes.
 
 | Backend | Hate | Violence | Sexual | Self-Harm | Overall CM Score |
 |---------|:----:|:--------:|:------:|:---------:|:----------------:|
-| nemo | 0% | 0% | 0% | 0% | 0% |
-| guardrails_ai | 0% | 0% | 0% | 0% | 0% |
-| presidio | 0% | 0% | 0% | 0% | 0% |
+| openai_moderation | 0% | 0% | 0% | 0% | 0% |
 
 ---
 
@@ -88,9 +84,7 @@ your latency budget.
 
 | Backend | Overall % | Avg Latency | Latency Category | Recommended For |
 |---------|:---------:|:-----------:|:----------------:|-----------------|
-| nemo | 9.0% | 1 ms | Ultra-fast | Real-time inference, high-throughput pipelines |
-| presidio | 6.4% | 50 ms | Fast | Standard API protection |
-| guardrails_ai | 9.0% | 61 ms | Fast | Standard API protection |
+| openai_moderation | 100.0% | 32612 ms | Slow | Offline analysis, compliance audits |
 
 Latency categories:
 - Ultra-fast: <10ms   (GA Guard)
@@ -108,8 +102,9 @@ in the guardrail ecosystem.
 | OWASP Category | Severity | Count |
 |:---------------|:--------:|:-----:|
 | LLM01 | critical | 2 |
-| LLM01 | high | 2 |
-| LLM02 | high | 15 |
+| LLM01 | high | 4 |
+| LLM02 | critical | 4 |
+| LLM02 | high | 17 |
 | LLM03 | critical | 3 |
 | LLM03 | high | 2 |
 | LLM04 | high | 3 |
@@ -118,7 +113,8 @@ in the guardrail ecosystem.
 | LLM05 | high | 1 |
 | LLM06 | critical | 3 |
 | LLM06 | high | 9 |
-| LLM07 | critical | 3 |
+| LLM07 | critical | 4 |
+| LLM07 | high | 2 |
 | LLM08 | critical | 4 |
 | LLM08 | high | 2 |
 | LLM09 | critical | 1 |
@@ -136,8 +132,7 @@ in the guardrail ecosystem.
 
 | Backend | Reason | Expected In |
 |---------|--------|-------------|
-| lakera | UNAVAILABLE | SDK not installed or API credentials not configured |
-| ga_guard | UNAVAILABLE | SDK not installed or API credentials not configured |
+| — | — | — |
 
 ---
 
