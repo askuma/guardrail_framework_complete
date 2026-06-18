@@ -1106,6 +1106,25 @@ function RedTeamTab({ toast }) {
               </thead>
               <tbody>
                 {compareReport.backends_tested.map(backend => {
+                  const skipReason = compareReport.skipped_backends?.[backend];
+                  if (skipReason) {
+                    const badgeLabel = skipReason === 'MISSING_CREDENTIALS' ? 'MISSING CREDENTIALS' : 'PENDING LLM BACKEND';
+                    return (
+                      <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22`, opacity: 0.45 }}>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: C.muted, fontWeight: 400 }}>{backend.replace(/_/g, ' ')}</span>
+                            <Badge color={C.muted}>{badgeLabel}</Badge>
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', color: C.muted }}>—</td>
+                        {RT_OWASP.map(({ ref }) => (
+                          <td key={ref} style={{ padding: '10px 6px', textAlign: 'center', color: C.muted }}>—</td>
+                        ))}
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: C.muted }}>—</td>
+                      </tr>
+                    );
+                  }
                   const rep     = compareReport.reports[backend];
                   const rate    = rep?.pass_rate ?? 0;
                   const isBest  = backend === compareReport.best_overall;

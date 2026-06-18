@@ -19,6 +19,7 @@ import argparse
 import calendar
 import json
 import logging
+import math
 import os
 import sys
 import traceback
@@ -39,7 +40,7 @@ from guardrail_framework.core import (
     GuardrailFramework,
     get_framework,
 )
-from guardrail_framework.probes import AttackCategory, ProbeLibrary
+from guardrail_framework.probes import ProbeLibrary
 from guardrail_framework.red_team_runner import ComparisonReport, RedTeamRunner
 
 logger = logging.getLogger(__name__)
@@ -542,188 +543,283 @@ def _render_markdown(
     year, month = artifacts.year, artifacts.month
     month_name  = calendar.month_name[month]
 
-    best  = comparison.best_overall
-    worst = comparison.worst_overall
+    template_path = Path(__file__).parent / "benchmark_template.md"
+    template = template_path.read_text(encoding="utf-8")
+
+    best      = comparison.best_overall
     best_rate = comparison.reports[best].pass_rate
-    probe_count = (
-        sum(r.total_probes for r in comparison.reports.values())
-        // max(len(comparison.reports), 1)
-    )
 
-    # TL;DR strings
-    biggest_improvement = "none this month"
-    biggest_regression  = "none this month"
+    improvement_backend = "none this month"
+    improvement_delta   = "0.0"
+    regression_backend  = "none this month"
+    regression_delta    = "0.0"
     if delta:
-        imps = delta.get("improvements", [])
-        regs = delta.get("regressions",  [])
+        imps = delta.get("improvements", []) or []
+        regs = delta.get("regressions",  []) or []
         if imps:
-            b = imps[0]
-            biggest_improvement = f"**{b['backend']}** +{b['change']*100:.1f}%"
+            improvement_backend = imps[0]["backend"]
+            improvement_delta   = f"{imps[0]['change'] * 100:.1f}"
         if regs:
-            b = regs[0]
-            biggest_regression  = f"**{b['backend']}** {b['change']*100:.1f}%"
+            regression_backend = regs[0]["backend"]
+            regression_delta   = f"{abs(regs[0]['change'] * 100):.1f}"
 
-    lines = [
-        f"# GuardrailProbe Benchmark — {month_name} {year}",
-        "",
-        "> Independent OWASP LLM Top 10 evaluation of AI guardrail backends",
-        "",
-        "## TL;DR",
-        "",
-        f"- **Winner:** {best} ({best_rate*100:.1f}% overall pass rate)",
-    ]
+    subs: Dict[str, str] = {
+        "{MONTH}":                   month_name,
+        "{YEAR}":                    str(year),
+        "{BEST_OVERALL_BACKEND}":    best,
+        "{BEST_OVERALL_SCORE}":      f"{best_rate * 100:.1f}",
+        "{RATIO_WINNER}":            _tm_ratio_winner(comparison),
+        "{IMPROVEMENT_BACKEND}":     improvement_backend,
+        "{IMPROVEMENT_DELTA}":       improvement_delta,
+        "{REGRESSION_BACKEND}":      regression_backend,
+        "{REGRESSION_DELTA}":        regression_delta,
+        "{BACKENDS_TESTED_COUNT}":   str(len(comparison.backends_tested)),
+        "{BACKENDS_SKIPPED_COUNT}":  str(len(comparison.skipped_backends)),
+        "{TOTAL_PROBES}":            str(sum(r.total_probes for r in comparison.reports.values())),
+        "{GENERATED_AT}":            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "{RUN_ID}":                  comparison.run_id,
+        "{OVERALL_TABLE_ROWS}":      _tm_overall_rows(comparison, delta),
+        "{CONTENT_MODERATION_TABLE_ROWS}": _tm_cm_rows(comparison),
+        "{LATENCY_TABLE_ROWS}":      _tm_latency_rows(comparison),
+        "{NOTABLE_BYPASSES_LIST}":   _tm_bypasses(comparison),
+        "{SKIPPED_BACKENDS_TABLE}":  _tm_skipped_table(comparison, pending_detail),
+        "{DELTA_SECTION}":           _tm_delta_section(delta),
+        "{VERSION}":                 PROBE_LIBRARY_VERSION,
+    }
 
-    if delta:
-        lines += [
-            f"- **Biggest improvement vs last month:** {biggest_improvement}",
-            f"- **Biggest regression:** {biggest_regression}",
-        ]
+    for ref, data in _tm_per_category(comparison).items():
+        subs[f"{{{ref}_WINNER}}"]       = data["winner"]
+        subs[f"{{{ref}_SCORE}}"]        = data["score"]
+        subs[f"{{{ref}_SECOND}}"]       = data["second"]
+        subs[f"{{{ref}_SECOND_SCORE}}"] = data["second_score"]
 
-    lines += [
-        f"- **Backends tested:** {len(comparison.backends_tested)}",
-        f"- **Probes run:** {probe_count} per backend",
-        "",
-        "---",
-        "",
-        "## Overall Comparison",
-        "",
-        "| Backend | Overall % | vs Last Month | Best Category | Worst Category | Avg Latency |",
-        "|---------|:---------:|:-------------:|:-------------:|:--------------:|:-----------:|",
-    ]
+    result = template
+    for key, value in subs.items():
+        result = result.replace(key, value)
+    return result
 
-    for b in comparison.backends_tested:
-        r = comparison.reports[b.value]
 
+# ── Template section builders ──────────────────────────────────────────────────
+
+
+def _tm_ratio_winner(comparison: ComparisonReport) -> str:
+    """Backend with the best pass_rate / log10(latency + 10) ratio."""
+    best_ratio, winner = -1.0, "—"
+    for bname, r in comparison.reports.items():
+        if bname in comparison.skipped_backends or r.average_latency_ms <= 0:
+            continue
+        ratio = (r.pass_rate * 100) / math.log10(r.average_latency_ms + 10)
+        if ratio > best_ratio:
+            best_ratio, winner = ratio, bname
+    return winner
+
+
+def _tm_overall_rows(comparison: ComparisonReport, delta: Optional[Dict]) -> str:
+    rows: List[str] = []
+    for backend in comparison.backends_tested:
+        bname = backend.value
+        if bname in comparison.skipped_backends:
+            reason = comparison.skipped_backends[bname]
+            rows.append(f"| {bname} | SKIPPED ({reason}) | — | — | — | — |")
+            continue
+        r = comparison.reports.get(bname)
+        if not r:
+            continue
         vs_last = "—"
         if delta:
-            bd = delta.get("backend_delta", {}).get(b.value, {})
+            bd = (delta.get("backend_delta") or {}).get(bname, {})
             ch = bd.get("change")
             if ch is not None:
                 sign = "+" if ch >= 0 else ""
                 flag = " 🔴" if ch <= -0.05 else (" 🟢" if ch >= 0.05 else "")
-                vs_last = f"{sign}{ch*100:.1f}%{flag}"
-
+                vs_last = f"{sign}{ch * 100:.1f}%{flag}"
         cats = r.results_by_category
-        best_cat  = max(cats, key=lambda c: cats[c].get("pass_rate", 0))  if cats else "—"
-        worst_cat = min(cats, key=lambda c: cats[c].get("pass_rate", 1))  if cats else "—"
-
-        lines.append(
-            f"| {b.value} | {r.pass_rate*100:.1f}% | {vs_last} "
+        best_cat  = max(cats, key=lambda c: cats[c].get("pass_rate", 0)) if cats else "—"
+        worst_cat = min(cats, key=lambda c: cats[c].get("pass_rate", 1)) if cats else "—"
+        rows.append(
+            f"| {bname} | {r.pass_rate * 100:.1f}% | {vs_last} "
             f"| {best_cat} | {worst_cat} | {r.average_latency_ms:.0f} ms |"
         )
+    return "\n".join(rows) or "| (no active backends) | — | — | — | — | — |"
 
-    lines += [
-        "",
-        "---",
-        "",
-        "## Per-Category Winners",
-        "",
-        "| Category | Winner | Score | Runner-up | Score |",
-        "|----------|:------:|:-----:|:---------:|:-----:|",
+
+def _tm_cm_rows(comparison: ComparisonReport) -> str:
+    """Pass rates for CM-001–CM-020 probes split into Hate/Violence/Sexual/Self-Harm."""
+    CM_RANGES = {"Hate": (1, 5), "Violence": (6, 10), "Sexual": (11, 15), "Self-Harm": (16, 20)}
+
+    def _probe_num(pid: str) -> Optional[int]:
+        if pid.startswith("CM-"):
+            try:
+                return int(pid[3:])
+            except ValueError:
+                pass
+        return None
+
+    rows: List[str] = []
+    for backend in comparison.backends_tested:
+        bname = backend.value
+        if bname in comparison.skipped_backends:
+            rows.append(f"| {bname} | — | — | — | — | SKIPPED |")
+            continue
+        r = comparison.reports.get(bname)
+        if not r:
+            continue
+        cm = [pr for pr in r.probe_results if _probe_num(pr.probe.id) is not None]
+        cats: Dict[str, str] = {}
+        for cat_name, (lo, hi) in CM_RANGES.items():
+            bucket = [pr for pr in cm if lo <= (_probe_num(pr.probe.id) or 0) <= hi]
+            if bucket:
+                n_pass = sum(1 for pr in bucket if pr.passed is True)
+                cats[cat_name] = f"{n_pass / len(bucket) * 100:.0f}%"
+            else:
+                cats[cat_name] = "—"
+        if cm:
+            overall = sum(1 for pr in cm if pr.passed is True) / len(cm)
+            overall_str = f"{overall * 100:.0f}%"
+        else:
+            overall_str = "—"
+        rows.append(
+            f"| {bname} | {cats['Hate']} | {cats['Violence']} "
+            f"| {cats['Sexual']} | {cats['Self-Harm']} | {overall_str} |"
+        )
+    return "\n".join(rows) or "| (no data) | — | — | — | — | — |"
+
+
+def _tm_latency_rows(comparison: ComparisonReport) -> str:
+    active = [
+        (bname, r)
+        for bname, r in comparison.reports.items()
+        if bname not in comparison.skipped_backends and r.total_probes > 0
     ]
+    active.sort(key=lambda x: x[1].average_latency_ms)
+    rows: List[str] = []
+    for bname, r in active:
+        ms = r.average_latency_ms
+        if ms < 10:
+            cat, rec = "Ultra-fast", "Real-time inference, high-throughput pipelines"
+        elif ms < 200:
+            cat, rec = "Fast", "Standard API protection"
+        elif ms < 1000:
+            cat, rec = "Moderate", "Batch processing, async pipelines"
+        else:
+            cat, rec = "Slow", "Offline analysis, compliance audits"
+        rows.append(f"| {bname} | {r.pass_rate * 100:.1f}% | {ms:.0f} ms | {cat} | {rec} |")
+    return "\n".join(rows) or "| (no active backends) | — | — | — | — |"
 
-    for cat in AttackCategory:
-        scores = [
-            (b.value, comparison.reports[b.value].results_by_category.get(cat.value, {}).get("pass_rate", 0.0))
-            for b in comparison.backends_tested
-        ]
-        scores.sort(key=lambda x: x[1], reverse=True)
-        w_name, w_score = (scores[0][0], f"{scores[0][1]*100:.0f}%") if scores else ("—", "—")
-        r_name, r_score = (scores[1][0], f"{scores[1][1]*100:.0f}%") if len(scores) > 1 else ("—", "—")
-        lines.append(f"| {cat.value} | {w_name} | {w_score} | {r_name} | {r_score} |")
 
-    # Notable bypasses
+def _tm_bypasses(comparison: ComparisonReport) -> str:
     bypasses = _find_universal_bypasses(comparison)
-    lines += [
-        "",
-        "---",
-        "",
-        "## Notable Bypasses",
-        "",
-        "Attacks that bypassed **all** tested backends:",
-        "",
+    if not bypasses:
+        return "No universal bypasses detected in this run."
+    lines = [
+        "| OWASP Category | Severity | Count |",
+        "|:---------------|:--------:|:-----:|",
     ]
-
-    if bypasses:
-        lines += [
-            "| OWASP Category | Severity | Count |",
-            "|:---------------|:--------:|:-----:|",
-        ]
-        for entry in bypasses:
-            lines.append(f"| {entry['owasp_ref']} | {entry['severity']} | {entry['count']} |")
-    else:
-        lines.append("No universal bypasses detected in this run.")
-
-    # Pending backends
-    if pending_detail:
-        lines += [
-            "",
-            "---",
-            "",
-            "## Backends Pending",
-            "",
-            "| Backend | Status | Expected |",
-            "|---------|:------:|----------|",
-        ]
-        next_month_name = calendar.month_name[(month % 12) + 1]
-        for p in pending_detail:
-            lines.append(
-                f"| {p['backend']} | {p['reason']} | {next_month_name} {year} |"
-            )
-
-    lines += [
-        "",
-        "---",
-        "",
-        "## Methodology",
-        "",
-        "See [METHODOLOGY.md](../METHODOLOGY.md) for probe construction standards, "
-        "OWASP LLM Top 10 mapping, pass/fail logic, and regulatory mapping.",
-        "",
-        "---",
-        "",
-        "## How to Reproduce",
-        "",
-        "```bash",
-        "pip install guardrailprobe",
-        f"python3 benchmark_report.py --year {year} --month {month} --dry-run",
-        "```",
-        "",
-        "---",
-        "",
-        "## About GuardrailProbe",
-        "",
-        "Open-source AI guardrail testing framework.  "
-        "[github.com/askuma/guardrailprobe](https://github.com/askuma/guardrailprobe)",
-        "",
-        f"*Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · "
-        f"Run ID: {comparison.run_id} · "
-        f"Probe library v{PROBE_LIBRARY_VERSION}*",
-        "",
-    ]
-
+    for entry in bypasses:
+        lines.append(f"| {entry['owasp_ref']} | {entry['severity']} | {entry['count']} |")
     return "\n".join(lines)
 
 
+def _tm_skipped_table(
+    comparison: ComparisonReport,
+    pending_detail: List[Dict],
+) -> str:
+    rows: List[str] = []
+    for bname, reason in comparison.skipped_backends.items():
+        rows.append(f"| {bname} | {reason} | Configure credentials |")
+    for p in pending_detail:
+        if p["backend"] not in comparison.skipped_backends:
+            note = p.get("note", "TBD")
+            rows.append(f"| {p['backend']} | {p['reason']} | {note} |")
+    return "\n".join(rows) or "| — | — | — |"
+
+
+def _tm_delta_section(delta: Optional[Dict]) -> str:
+    if delta is None:
+        return "First benchmark — no prior month comparison available."
+    lines: List[str] = []
+    new_probes = delta.get("new_probes_total", 0)
+    if new_probes:
+        lines.append(f"**{new_probes} new probes** added since last month.\n")
+    imps = delta.get("improvements", []) or []
+    regs = delta.get("regressions",  []) or []
+    if imps:
+        lines.append("**Improvements (>5%):**\n")
+        for b in imps:
+            lines.append(f"- {b['backend']}: +{b['change'] * 100:.1f}%")
+        lines.append("")
+    if regs:
+        lines.append("**Regressions (>5%):**\n")
+        for b in regs:
+            lines.append(f"- {b['backend']}: {b['change'] * 100:.1f}%")
+        lines.append("")
+    bd = delta.get("backend_delta") or {}
+    if bd:
+        lines += [
+            "**All backend changes:**\n",
+            "| Backend | Previous | Current | Change |",
+            "|---------|----------|---------|--------|",
+        ]
+        for bname, data in bd.items():
+            prev   = f"{data['prior'] * 100:.1f}%" if data.get("prior") is not None else "—"
+            curr   = f"{data['current'] * 100:.1f}%"
+            change = f"{data['change'] * 100:+.1f}%" if data.get("change") is not None else "—"
+            lines.append(f"| {bname} | {prev} | {curr} | {change} |")
+    return "\n".join(lines) or "No significant changes from prior month."
+
+
+def _tm_per_category(comparison: ComparisonReport) -> Dict[str, Dict[str, str]]:
+    OWASP_REFS = [
+        "LLM01", "LLM02", "LLM03", "LLM04", "LLM05",
+        "LLM06", "LLM07", "LLM08", "LLM09", "LLM10",
+    ]
+    result: Dict[str, Dict[str, str]] = {}
+    active = {
+        bname: r
+        for bname, r in comparison.reports.items()
+        if bname not in comparison.skipped_backends
+    }
+    for ref in OWASP_REFS:
+        scores = sorted(
+            ((bname, r.results_by_category.get(ref, {}).get("pass_rate", 0.0))
+             for bname, r in active.items()),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        result[ref] = {
+            "winner":       scores[0][0]                  if scores           else "—",
+            "score":        f"{scores[0][1] * 100:.0f}"   if scores           else "—",
+            "second":       scores[1][0]                  if len(scores) > 1  else "—",
+            "second_score": f"{scores[1][1] * 100:.0f}"   if len(scores) > 1  else "—",
+        }
+    return result
+
+
 def _find_universal_bypasses(comparison: ComparisonReport) -> List[Dict]:
-    """Return probes that failed on every tested backend, grouped by ref + severity."""
+    """Return probes that explicitly failed on every active backend, grouped by ref + severity."""
     if not comparison.reports:
         return []
 
-    all_backends = list(comparison.reports.keys())
+    active_backends = [
+        bname for bname in comparison.reports
+        if bname not in comparison.skipped_backends
+    ]
+    if not active_backends:
+        return []
+
     failed_on: Dict[str, set] = defaultdict(set)
     probe_meta: Dict[str, Dict] = {}
 
-    for bname, report in comparison.reports.items():
-        for pr in report.probe_results:
-            if not pr.passed:
+    for bname in active_backends:
+        for pr in comparison.reports[bname].probe_results:
+            if pr.passed is False:          # skip None (preflight-skipped probes)
                 failed_on[pr.probe.id].add(bname)
                 probe_meta[pr.probe.id] = {
                     "owasp_ref": pr.probe.owasp_ref,
                     "severity":  pr.probe.severity,
                 }
 
-    n_backends = len(all_backends)
+    n_backends = len(active_backends)
     groups: Dict[tuple, int] = {}
     for pid, backends in failed_on.items():
         if len(backends) == n_backends:

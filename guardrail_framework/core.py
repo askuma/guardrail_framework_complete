@@ -335,6 +335,9 @@ class NemoGuardrailsBackend(GuardrailBackendInterface):
             "(NeMo also requires an LLM provider, e.g. pip install openai)"
         )
 
+    def _check_credentials(self) -> bool:
+        return True  # local SDK with regex fallback; always operational
+
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.NEMO)
         start = time.time()
@@ -494,6 +497,9 @@ class GuardrailsAIBackend(GuardrailBackendInterface):
         risk_score = 0.0 if passed else 0.8
         return passed, risk_score, detected
 
+    def _check_credentials(self) -> bool:
+        return True  # local SDK with regex fallback; always operational
+
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.GUARDRAILS_AI)
         start = time.time()
@@ -590,6 +596,9 @@ class GuardrailsAIBackend(GuardrailBackendInterface):
 
 class PresidioBackend(GuardrailBackendInterface):
     """Microsoft Presidio PII detection backend"""
+
+    def _check_credentials(self) -> bool:
+        return True  # fully local; no external credentials required
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.PRESIDIO)
@@ -774,6 +783,9 @@ class LakeraGuardBackend(GuardrailBackendInterface):
 
         return flagged, (1.0 if flagged else 0.0), risks
 
+    def _check_credentials(self) -> bool:
+        return bool(self._api_key())
+
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._api_key():
             return self._skipped_result()
@@ -898,6 +910,9 @@ class GAGuardBackend(GuardrailBackendInterface):
         score, risks = wasm_scorer.score(text, sensitivity)
         threshold = _THRESHOLDS.get(sensitivity, 0.65)
         return score < threshold, score, risks
+
+    def _check_credentials(self) -> bool:
+        return True  # local wasm fallback when no API URL is configured
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.GA_GUARD)
@@ -1055,6 +1070,9 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
         max_score = max(scores.values(), default=0.0) if scores else 0.0
         return flagged, max_score, risks
 
+    def _check_credentials(self) -> bool:
+        return bool(self._api_key())
+
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._api_key():
             return self._skipped_result()
@@ -1203,9 +1221,9 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
 
     @staticmethod
     def _severity_to_action(max_severity: int) -> ActionType:
-        if max_severity >= 5:
+        if max_severity >= 4:
             return ActionType.BLOCK
-        if max_severity >= 3:
+        if max_severity >= 2:
             return ActionType.ESCALATE
         return ActionType.ALLOW
 
@@ -1286,6 +1304,9 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
         flagged = action in (ActionType.ESCALATE, ActionType.BLOCK)
         score = round(max_severity / 6.0, 4)
         return flagged, score, risks, max_severity
+
+    def _check_credentials(self) -> bool:
+        return bool(self._endpoint() and self._api_key())
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._endpoint() or not self._api_key():
@@ -1390,7 +1411,7 @@ class AzurePromptShieldsBackend(GuardrailBackendInterface):
     Gracefully skips (ALLOW pass-through) when the env vars are absent.
     """
 
-    _API_VERSION = "2024-02-15-preview"
+    _API_VERSION = "2024-09-01"
     _MAX_TEXT_CHARS = 10_000
 
     def __init__(self, config: Dict[str, Any]):
@@ -1433,6 +1454,13 @@ class AzurePromptShieldsBackend(GuardrailBackendInterface):
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     data = json.loads(resp.read())
                 break
+            except urllib.error.HTTPError as exc:
+                # Log the response body for easier diagnosis, then re-raise immediately.
+                body = exc.read()[:500].decode("utf-8", errors="replace")
+                self.logger.error(
+                    "Azure Prompt Shields HTTP %d — url=%s body=%s", exc.code, url, body
+                )
+                raise
             except OSError:
                 if attempt == 0:
                     continue
@@ -1457,6 +1485,9 @@ class AzurePromptShieldsBackend(GuardrailBackendInterface):
             action=ActionType.SKIPPED,
             findings={"skipped": True, "reason": reason},
         )
+
+    def _check_credentials(self) -> bool:
+        return bool(self._endpoint() and self._api_key())
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.AZURE_PROMPT_SHIELDS)
@@ -1664,6 +1695,9 @@ class AWSBedrockBackend(GuardrailBackendInterface):
             "AccessDenied", "InvalidClientTokenId", "NoCredentialsError",
             "ExpiredToken", "UnrecognizedClientException",
         ))
+
+    def _check_credentials(self) -> bool:
+        return self._creds_present()
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._creds_present():
