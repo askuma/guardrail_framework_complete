@@ -1,4 +1,4 @@
-version: "3.9"
+
 
 # Before starting: copy .env.example to .env and set GUARDRAIL_API_KEYS.
 # GUARDRAIL_API_KEYS is required — the server will generate an ephemeral key
@@ -21,6 +21,9 @@ services:
       - LOG_LEVEL=info
     volumes:
       - guardrail_data:/app/data
+    dns:
+      - 8.8.8.8    # Google — primary
+      - 1.1.1.1    # Cloudflare — fallback
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
