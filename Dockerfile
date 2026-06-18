@@ -54,6 +54,15 @@ RUN pip install --no-cache-dir \
     "presidio-anonymizer>=2.2.0" \
     && python -m spacy download en_core_web_lg
 
+# Pre-warm the tldextract public-suffix list into a fixed cache directory so
+# the container doesn't need outbound DNS at runtime.  TLDEXTRACT_CACHE_DIR is
+# exported into the image and picked up automatically when Python code calls
+# tldextract.  The || true ensures a build-time network failure is non-fatal
+# (tldextract will fall back to its bundled snapshot).
+ENV TLDEXTRACT_CACHE_DIR=/app/tldextract_cache
+RUN mkdir -p /app/tldextract_cache && \
+    python3 -c "import tldextract; tldextract.extract('example.com')" 2>/dev/null || true
+
 # Copy the compiled React app from stage 1
 COPY --from=dashboard-build /dashboard/build ./guardrail_framework/static/
 
@@ -65,7 +74,7 @@ RUN python patch_static.py
 RUN mkdir -p /app/data
 
 # Non-root user
-RUN useradd -m -u 1000 guardrail && chown -R guardrail:guardrail /app
+RUN useradd -m -u 1000 guardrail && chown -R guardrail:guardrail /app /app/tldextract_cache
 RUN chown -R guardrail:guardrail /app/data
 
 USER guardrail
