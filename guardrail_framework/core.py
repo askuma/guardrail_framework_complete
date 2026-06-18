@@ -133,12 +133,13 @@ class RiskCategory(str, Enum):
 
 class ActionType(str, Enum):
     """Guardrail action when violation detected"""
-    ALLOW = "allow"
-    BLOCK = "block"
-    REDACT = "redact"
-    REWRITE = "rewrite"
-    ESCALATE = "escalate"
+    ALLOW      = "allow"
+    BLOCK      = "block"
+    REDACT     = "redact"
+    REWRITE    = "rewrite"
+    ESCALATE   = "escalate"
     RATE_LIMIT = "rate_limit"
+    SKIPPED    = "skipped"   # backend not configured or credentials invalid
 
 
 @dataclass
@@ -730,6 +731,14 @@ class LakeraGuardBackend(GuardrailBackendInterface):
     def _api_key(self) -> Optional[str]:
         return os.getenv("LAKERA_GUARD_API_KEY", "").strip() or self.config.get("api_key") or None
 
+    def _skipped_result(self, reason: str = "LAKERA_GUARD_API_KEY not configured") -> GuardrailResult:
+        return GuardrailResult(
+            backend_used=GuardrailBackend.LAKERA,
+            passed=True,
+            action=ActionType.SKIPPED,
+            findings={"skipped": True, "reason": reason},
+        )
+
     def _call_api(self, url: str, text: str, role: str = "user") -> Tuple[bool, float, List[Dict]]:
         """Returns (flagged, risk_score, detected_risks)."""
         api_key = self._api_key()
@@ -766,6 +775,8 @@ class LakeraGuardBackend(GuardrailBackendInterface):
         return flagged, (1.0 if flagged else 0.0), risks
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._api_key():
+            return self._skipped_result()
         result = GuardrailResult(backend_used=GuardrailBackend.LAKERA)
         start = time.time()
         try:
@@ -776,14 +787,23 @@ class LakeraGuardBackend(GuardrailBackendInterface):
             if flagged:
                 result.action = ActionType.BLOCK
                 result.severity = "critical"
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("Lakera auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(f"Invalid API key (HTTP {exc.code})")
+            self.logger.error("Lakera API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Lakera API error: {exc}")
         except Exception as exc:
-            self.logger.error(f"Lakera API error: {exc}")
+            self.logger.error("Lakera API error: %s", exc)
             from .testing import fail_closed_result
             return fail_closed_result(f"Lakera API error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
         return result
 
     def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._api_key():
+            return self._skipped_result()
         result = GuardrailResult(backend_used=GuardrailBackend.LAKERA)
         start = time.time()
         result.original_text = text
@@ -799,8 +819,15 @@ class LakeraGuardBackend(GuardrailBackendInterface):
                 result.modified_text = rewrite_text(text, risks)
             else:
                 result.modified_text = text
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("Lakera auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(f"Invalid API key (HTTP {exc.code})")
+            self.logger.error("Lakera API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Lakera API error: {exc}")
         except Exception as exc:
-            self.logger.error(f"Lakera API error: {exc}")
+            self.logger.error("Lakera API error: %s", exc)
             from .testing import fail_closed_result
             return fail_closed_result(f"Lakera API error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
@@ -966,14 +993,15 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
             or None
         )
 
-    def _skipped_result(self, original_text: str = "") -> GuardrailResult:
+    def _skipped_result(self, original_text: str = "",
+                        reason: str = "OPENAI_API_KEY not configured") -> GuardrailResult:
         r = GuardrailResult(backend_used=GuardrailBackend.OPENAI_MODERATION)
         r.passed = True
-        r.action = ActionType.ALLOW
+        r.action = ActionType.SKIPPED
         r.risk_score = 0.0
         r.original_text = original_text
         r.modified_text = original_text
-        r.findings = {"skipped": True, "reason": "OPENAI_API_KEY not configured"}
+        r.findings = {"skipped": True, "reason": reason}
         return r
 
     def _call_api(self, text: str) -> Tuple[bool, float, List[Dict]]:
@@ -1040,6 +1068,13 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
             if flagged:
                 result.action = ActionType.BLOCK
                 result.severity = "critical"
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("OpenAI Moderation auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(reason=f"Invalid API key (HTTP {exc.code})")
+            self.logger.error("OpenAI Moderation API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"OpenAI Moderation API error: {exc}")
         except Exception as exc:
             self.logger.error("OpenAI Moderation API error: %s", exc)
             from .testing import fail_closed_result
@@ -1065,6 +1100,13 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
                 result.modified_text = rewrite_text(text, risks)
             else:
                 result.modified_text = text
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("OpenAI Moderation auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(text, reason=f"Invalid API key (HTTP {exc.code})")
+            self.logger.error("OpenAI Moderation API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"OpenAI Moderation API error: {exc}")
         except Exception as exc:
             self.logger.error("OpenAI Moderation API error: %s", exc)
             from .testing import fail_closed_result
@@ -1148,17 +1190,15 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
             or None
         )
 
-    def _skipped_result(self, original_text: str = "") -> GuardrailResult:
+    def _skipped_result(self, original_text: str = "",
+                        reason: str = "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured") -> GuardrailResult:
         r = GuardrailResult(backend_used=GuardrailBackend.AZURE_CONTENT_SAFETY)
         r.passed = True
-        r.action = ActionType.ALLOW
+        r.action = ActionType.SKIPPED
         r.risk_score = 0.0
         r.original_text = original_text
         r.modified_text = original_text
-        r.findings = {
-            "skipped": True,
-            "reason": "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured",
-        }
+        r.findings = {"skipped": True, "reason": reason}
         return r
 
     @staticmethod
@@ -1260,6 +1300,13 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
             if flagged:
                 result.action = self._severity_to_action(max_severity)
                 result.severity = "critical" if max_severity >= 5 else "warning"
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("Azure Content Safety auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(reason=f"Invalid credentials (HTTP {exc.code})")
+            self.logger.error("Azure Content Safety API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Content Safety API error: {exc}")
         except Exception as exc:
             self.logger.error("Azure Content Safety API error: %s", exc)
             from .testing import fail_closed_result
@@ -1285,6 +1332,13 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
                 result.modified_text = rewrite_text(text, risks)
             else:
                 result.modified_text = text
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("Azure Content Safety auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(text, reason=f"Invalid credentials (HTTP {exc.code})")
+            self.logger.error("Azure Content Safety API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Content Safety API error: {exc}")
         except Exception as exc:
             self.logger.error("Azure Content Safety API error: %s", exc)
             from .testing import fail_closed_result
@@ -1400,7 +1454,7 @@ class AzurePromptShieldsBackend(GuardrailBackendInterface):
         return GuardrailResult(
             backend_used=GuardrailBackend.AZURE_PROMPT_SHIELDS,
             passed=True,
-            action=ActionType.ALLOW,
+            action=ActionType.SKIPPED,
             findings={"skipped": True, "reason": reason},
         )
 
@@ -1423,6 +1477,13 @@ class AzurePromptShieldsBackend(GuardrailBackendInterface):
                 result.modified_text = rewrite_text(text, risks)
             else:
                 result.modified_text = text
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("Azure Prompt Shields auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(f"Invalid credentials (HTTP {exc.code})")
+            self.logger.error("Azure Prompt Shields API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Prompt Shields API error: {exc}")
         except Exception as exc:
             self.logger.error("Azure Prompt Shields API error: %s", exc)
             from .testing import fail_closed_result
@@ -1447,6 +1508,13 @@ class AzurePromptShieldsBackend(GuardrailBackendInterface):
                 result.severity = "critical"
             else:
                 result.modified_text = text
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self.logger.warning("Azure Prompt Shields auth error %d — marking SKIPPED", exc.code)
+                return self._skipped_result(f"Invalid credentials (HTTP {exc.code})")
+            self.logger.error("Azure Prompt Shields API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Prompt Shields API error: {exc}")
         except Exception as exc:
             self.logger.error("Azure Prompt Shields API error: %s", exc)
             from .testing import fail_closed_result
@@ -1518,21 +1586,19 @@ class AWSBedrockBackend(GuardrailBackendInterface):
         c = self._creds()
         return bool(c["region"] and c["guardrail_id"])
 
-    def _skipped_result(self, original_text: str = "") -> GuardrailResult:
+    def _skipped_result(self, original_text: str = "",
+                        reason: str = (
+                            "AWS_DEFAULT_REGION and AWS_BEDROCK_GUARDRAIL_ID are required. "
+                            "Also set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or configure "
+                            "an IAM instance profile."
+                        )) -> GuardrailResult:
         r = GuardrailResult(backend_used=GuardrailBackend.AWS_BEDROCK)
         r.passed = True
-        r.action = ActionType.ALLOW
+        r.action = ActionType.SKIPPED
         r.risk_score = 0.0
         r.original_text = original_text
         r.modified_text = original_text
-        r.findings = {
-            "skipped": True,
-            "reason": (
-                "AWS_DEFAULT_REGION and AWS_BEDROCK_GUARDRAIL_ID are required. "
-                "Also set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or configure "
-                "an IAM instance profile."
-            ),
-        }
+        r.findings = {"skipped": True, "reason": reason}
         return r
 
     def _call_api(self, text: str, source: str = "INPUT") -> Tuple[bool, float, List[Dict]]:
@@ -1591,6 +1657,14 @@ class AWSBedrockBackend(GuardrailBackendInterface):
 
         return flagged, (1.0 if flagged else 0.0), risks
 
+    @staticmethod
+    def _is_auth_error(exc: Exception) -> bool:
+        s = str(exc)
+        return any(kw in s for kw in (
+            "AccessDenied", "InvalidClientTokenId", "NoCredentialsError",
+            "ExpiredToken", "UnrecognizedClientException",
+        ))
+
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._creds_present():
             return self._skipped_result()
@@ -1605,6 +1679,9 @@ class AWSBedrockBackend(GuardrailBackendInterface):
                 result.action = ActionType.BLOCK
                 result.severity = "critical"
         except Exception as exc:
+            if self._is_auth_error(exc):
+                self.logger.warning("AWS Bedrock auth error — marking SKIPPED: %s", exc)
+                return self._skipped_result(reason=f"Invalid AWS credentials: {exc}")
             self.logger.error("AWS Bedrock API error: %s", exc)
             from .testing import fail_closed_result
             return fail_closed_result(f"AWS Bedrock API error: {exc}")
@@ -1630,6 +1707,9 @@ class AWSBedrockBackend(GuardrailBackendInterface):
             else:
                 result.modified_text = text
         except Exception as exc:
+            if self._is_auth_error(exc):
+                self.logger.warning("AWS Bedrock auth error — marking SKIPPED: %s", exc)
+                return self._skipped_result(text, reason=f"Invalid AWS credentials: {exc}")
             self.logger.error("AWS Bedrock API error: %s", exc)
             from .testing import fail_closed_result
             return fail_closed_result(f"AWS Bedrock API error: {exc}")
