@@ -4,14 +4,14 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![PyPI version](https://img.shields.io/badge/PyPI-v0.1.0-orange.svg)](https://pypi.org/project/guardrailprobe/)
-[![Probes](https://img.shields.io/badge/Probes-50%2B-green.svg)](guardrail_framework/probes.py)
+[![Probes](https://img.shields.io/badge/Probes-70%2B-green.svg)](guardrail_framework/probes.py)
 
 ---
 
 ## What it does
 
-- **Fires 58 adversarial probes** (OWASP LLM01–LLM10) directly at your guardrail middleware — not the model — and measures what slips through
-- **Compares multiple backends side-by-side** in a single run: NeMo Guardrails, GuardrailsAI, Presidio, Lakera Guard, GA Guard
+- **Fires 70+ adversarial probes** (OWASP LLM01–LLM10 + content moderation CM-001–CM-020) directly at your guardrail middleware — not the model — and measures what slips through
+- **Compares multiple backends side-by-side** in a single run: NeMo Guardrails, GuardrailsAI, Presidio, Lakera Guard, GA Guard, OpenAI Moderation, Azure Content Safety, Azure Prompt Shields, AWS Bedrock
 - **Exports cryptographically signed PDF reports** (PKCS#12 + RFC 3161 timestamp) that you can submit to auditors or attach to EU AI Act compliance documentation
 
 ---
@@ -37,7 +37,7 @@ pip install guardrailprobe
 Or from source:
 
 ```bash
-git clone https://github.com/ashuthemaddy/guardrailprobe.git
+git clone https://github.com/askuma/guardrailprobe.git
 cd guardrailprobe
 pip install -e ".[dev]"
 alembic upgrade head
@@ -49,6 +49,38 @@ Copy and configure your environment:
 cp .env.example .env
 # set GUARDRAIL_API_KEYS and GUARDRAIL_AUTH_ENABLED
 ```
+
+---
+
+## Deployment
+
+**Docker Compose (recommended):**
+
+```bash
+cp .env.example .env          # set GUARDRAIL_API_KEYS at minimum
+docker compose up -d
+```
+
+**Local development:**
+
+```bash
+pip install -e ".[dev]"
+alembic upgrade head          # copy docs/alembic.ini to project root first
+uvicorn guardrail_framework.server:app --reload
+```
+
+**Horizontal scaling** requires two additional env vars:
+
+```bash
+GUARDRAIL_DB_URL=postgresql://user:pass@db-host:5432/guardrail   # shared policy store
+GUARDRAIL_REDIS_URL=redis://redis-host:6379/0                     # cross-replica rate limiter
+```
+
+Always put a TLS-terminating reverse proxy (nginx, Caddy) in front of uvicorn.
+Full deployment guide including Docker single-container, PostgreSQL, Redis, TLS config,
+and production checklist: [docs/implementation.md](docs/implementation.md)
+
+For database migration config: [docs/alembic.ini](docs/alembic.ini)
 
 ---
 
@@ -96,25 +128,56 @@ guardrailprobe scan --backend guardrails_ai --categories LLM01,LLM04,LLM06
 
 ## Supported backends
 
-| Backend            | PyPI package        | Notes                                              |
-| ------------------ | ------------------- | -------------------------------------------------- |
-| NeMo Guardrails    | `nemoguardrails`    | Colang-based rail config auto-compiled from policy |
-| GuardrailsAI       | `guardrails-ai`     | YAML rail config auto-compiled from policy         |
-| Microsoft Presidio | `presidio-analyzer` | PII detection; falls back to regex if SDK absent   |
-| Lakera Guard       | _(REST API)_        | Requires `LAKERA_GUARD_API_KEY`                    |
-| GA Guard           | _(REST API)_        | Requires `GA_GUARD_API_URL` + `GA_GUARD_API_KEY`   |
+| Backend | Type | Credential Required |
+|---------|------|-------------------|
+| NeMo Guardrails | Local SDK | Optional LLM API key |
+| GuardrailsAI | Local SDK | Optional LLM API key |
+| Microsoft Presidio | Local SDK | None — fully local |
+| Lakera Guard | Cloud REST API | `LAKERA_GUARD_API_KEY` |
+| GA Guard | Cloud REST API | `GA_GUARD_API_URL` + `GA_GUARD_API_KEY` |
+| OpenAI Moderation | Cloud REST API | `OPENAI_API_KEY` |
+| Azure Content Safety | Cloud REST API | `AZURE_CONTENT_SAFETY_ENDPOINT` + `AZURE_CONTENT_SAFETY_KEY` |
+| Azure Prompt Shields | Cloud REST API | `AZURE_CONTENT_SAFETY_ENDPOINT` + `AZURE_CONTENT_SAFETY_KEY` |
+| AWS Bedrock Guardrails | Cloud Managed | AWS credentials + `AWS_BEDROCK_GUARDRAIL_ID` |
 
-All backends degrade gracefully to regex/keyword heuristics when the SDK is not installed, so you can start testing immediately without installing any optional dependency.
+All backends degrade gracefully when credentials are missing — they appear as SKIPPED in
+benchmark reports rather than showing misleading 0% scores.
+
+---
+
+## Benchmark Reports
+
+Monthly independent benchmark reports comparing all supported backends against OWASP LLM
+Top 10 and content moderation probe suites.
+
+Latest report: [benchmarks/](benchmarks/)
+Live dashboard: https://askuma.github.io/guardrailprobe
+
+Reports include:
+- Per-backend pass rates across all OWASP categories
+- Content moderation scores (Hate / Violence / Sexual / Self-harm)
+- Accuracy vs latency tradeoff analysis
+- Month-over-month regression tracking
+- Cryptographically signed PDF for audit submission
+
+## Independence Statement
+
+guardrailprobe has no commercial relationship with any tested backend provider. NVIDIA,
+Microsoft, OpenAI, Lakera, General Analysis, and Amazon do not fund, endorse, or influence
+this project.
+
+Probe library, methodology, and scoring logic are fully open source and independently
+auditable. See [METHODOLOGY.md](METHODOLOGY.md) for details.
 
 ---
 
 ## Documentation
 
 - [METHODOLOGY.md](METHODOLOGY.md) — Probe construction standard, OWASP mapping, pass/fail logic, report integrity, regulatory mapping (EU AI Act, GDPR, NIST AI RMF)
-- [API_REFERENCE.md](API_REFERENCE.md) — All 40+ REST endpoints
-- [SETUP_GUIDE.md](SETUP_GUIDE.md) — Production deployment, PostgreSQL, Redis, Docker
+- [API_REFERENCE.md](API_REFERENCE.md) — All 54 REST endpoints
+- [docs/implementation.md](docs/implementation.md) — Production deployment, PostgreSQL, Redis, Docker, TLS
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to add probes, backends, and file issues
-- [benchmarks/](benchmarks/) — Community-contributed pass-rate baselines per backend
+- [benchmarks/](benchmarks/) — Monthly benchmark reports
 
 ---
 
@@ -122,12 +185,19 @@ All backends degrade gracefully to regex/keyword heuristics when the SDK is not 
 
 ```
 guardrail_framework/
-  probes.py           — 58 built-in AttackProbe objects (OWASP LLM01–LLM10)
-  red_team_runner.py  — RedTeamRunner, ProbeResult, RedTeamReport, ComparisonReport
-  report_signer.py    — PDF generation + PKCS#12 signing + RFC 3161 timestamp
-  core.py             — GuardrailFramework, all backend adapters, policy engine
-  server.py           — FastAPI app, 40+ REST endpoints
-  compiler.py         — Policy → Colang / YAML / Presidio config compiler
+  probes.py           — 70+ built-in AttackProbe objects
+                        OWASP LLM01–LLM10 adversarial probes +
+                        CM-001–CM-020 content moderation probes
+                        (Hate, Violence, Sexual, Self-harm)
+  red_team_runner.py  — RedTeamRunner, ComparisonReport
+  report_signer.py    — PDF + PKCS#12 + RFC 3161
+  core.py             — GuardrailFramework, 9 backends
+  server.py           — FastAPI, 54 REST endpoints
+  compiler.py         — Policy compiler
+
+benchmark_report.py   — Monthly benchmark generator
+benchmarks/           — Published benchmark reports
+docs/                 — GitHub Pages benchmark site
 ```
 
 ---

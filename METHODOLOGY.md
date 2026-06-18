@@ -406,4 +406,4 @@ GuardTest is designed to provide **continuous, automated evidence** that supplem
 
 ---
 
-*This document is maintained as part of the Guardrail Framework. For the API reference, see [API_REFERENCE.md](API_REFERENCE.md). For deployment guidance, see [SETUP_GUIDE.md](SETUP_GUIDE.md).*
+*This document is maintained as part of the Guardrail Framework. For the API reference, see [API_REFERENCE.md](API_REFERENCE.md). For deployment guidance, see [docs/implementation.md](docs/implementation.md).*
