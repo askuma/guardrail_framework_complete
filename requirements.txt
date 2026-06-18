@@ -17,9 +17,9 @@ python-json-logger>=2.0.0
 
 # ── Optional: Real Presidio PII detection ─────────────────────────────────────
 # Uncomment to activate the real Presidio SDK backend (replaces regex fallback)
-# presidio-analyzer>=2.2.0
-# presidio-anonymizer>=2.2.0
-# spacy>=3.0.0
+presidio-analyzer>=2.2.0
+presidio-anonymizer>=2.2.0
+spacy>=3.0.0
 # After installing spacy run: python -m spacy download en_core_web_lg
 
 # ── Optional: Redis (multi-instance rate limiting + caching) ──────────────────
@@ -37,3 +37,14 @@ pyhanko-certvalidator>=0.26.0
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
 httpx>=0.24.0        # needed by pytest for FastAPI test client
+
+nemoguardrails>=0.9.0
+guardrails-ai>=0.4.0
+
+# ── Optional: Cloud moderation backends ───────────────────────────────────────
+# OpenAI Moderation API (set OPENAI_API_KEY to activate)
+openai>=1.0.0
+# Azure AI Content Safety (set AZURE_CONTENT_SAFETY_ENDPOINT + KEY to activate)
+azure-ai-contentsafety>=1.0.0
+# AWS Bedrock Guardrails (set AWS_* vars to activate)
+boto3>=1.28.0
