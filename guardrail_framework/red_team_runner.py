@@ -75,6 +75,7 @@ class ProbeResult:
     latency_ms: float
     timestamp: str
     raw_response: GuardrailResult
+    skipped: bool = False   # True when backend returned ActionType.SKIPPED
 
 
 @dataclass
@@ -99,7 +100,7 @@ class RedTeamReport:
     backend: GuardrailBackend
     run_id: str
     timestamp: str
-    total_probes: int
+    total_probes: int       # active (non-skipped) probes only
     passed: int
     failed: int
     pass_rate: float
@@ -107,6 +108,7 @@ class RedTeamReport:
     results_by_severity: Dict[str, Dict[str, Any]]
     average_latency_ms: float
     probe_results: List[ProbeResult] = field(default_factory=list)
+    skipped_count: int = 0  # probes excluded because backend returned SKIPPED
 
 
 @dataclass
@@ -279,8 +281,11 @@ class RedTeamRunner:
             r = self.run_against_backend(backend, probes=probes, categories=categories)
             reports[backend.value] = r
 
-        best_overall = max(reports, key=lambda k: reports[k].pass_rate)
-        worst_overall = min(reports, key=lambda k: reports[k].pass_rate)
+        # Exclude fully-skipped backends from best/worst ranking.
+        active_reports = {k: v for k, v in reports.items() if v.total_probes > 0}
+        ranked = active_reports if active_reports else reports
+        best_overall = max(ranked, key=lambda k: ranked[k].pass_rate)
+        worst_overall = min(ranked, key=lambda k: ranked[k].pass_rate)
 
         comparison = ComparisonReport(
             run_id=run_id,
@@ -440,7 +445,8 @@ class RedTeamRunner:
         result.latency_ms = latency_ms
 
         actual_action = result.action
-        passed = actual_action == probe.expected_action
+        is_skipped = actual_action == ActionType.SKIPPED
+        passed = (not is_skipped) and (actual_action == probe.expected_action)
 
         if self._shipper is not None:
             self._shipper.enqueue(
@@ -474,6 +480,7 @@ class RedTeamRunner:
             latency_ms=round(latency_ms, 2),
             timestamp=datetime.now(timezone.utc).isoformat(),
             raw_response=result,
+            skipped=is_skipped,
         )
 
 
@@ -500,14 +507,16 @@ def _build_report(
     timestamp: str,
     probe_results: List[ProbeResult],
 ) -> RedTeamReport:
-    total = len(probe_results)
-    n_passed = sum(1 for pr in probe_results if pr.passed)
+    n_skipped = sum(1 for pr in probe_results if pr.skipped)
+    active = [pr for pr in probe_results if not pr.skipped]
+    total = len(active)
+    n_passed = sum(1 for pr in active if pr.passed)
     n_failed = total - n_passed
     pass_rate = n_passed / total if total else 0.0
-    avg_latency = sum(pr.latency_ms for pr in probe_results) / total if total else 0.0
+    avg_latency = sum(pr.latency_ms for pr in active) / total if total else 0.0
 
     by_category: Dict[str, Dict[str, Any]] = {}
-    for pr in probe_results:
+    for pr in active:
         ref = pr.probe.owasp_ref
         b = by_category.setdefault(ref, {"total": 0, "passed": 0, "failed": 0})
         b["total"] += 1
@@ -521,7 +530,7 @@ def _build_report(
         )
 
     by_severity: Dict[str, Dict[str, Any]] = {}
-    for pr in probe_results:
+    for pr in active:
         sev = pr.probe.severity
         b = by_severity.setdefault(sev, {"total": 0, "passed": 0, "failed": 0})
         b["total"] += 1
@@ -546,6 +555,7 @@ def _build_report(
         results_by_severity=by_severity,
         average_latency_ms=round(avg_latency, 2),
         probe_results=probe_results,
+        skipped_count=n_skipped,
     )
 
 
