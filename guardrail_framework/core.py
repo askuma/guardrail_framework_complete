@@ -735,7 +735,10 @@ class LakeraGuardBackend(GuardrailBackendInterface):
         if not api_key:
             raise ValueError("Lakera Guard API key not configured. Set LAKERA_GUARD_API_KEY.")
 
-        payload = json.dumps({"messages": [{"role": role, "content": text}]}).encode()
+        payload = json.dumps({
+            "messages": [{"role": role, "content": text}],
+            "breakdown": True,
+        }).encode()
         req = urllib.request.Request(
             url,
             data=payload,
@@ -747,18 +750,17 @@ class LakeraGuardBackend(GuardrailBackendInterface):
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
 
-        first = data.get("results", [{}])[0]
-        flagged = bool(first.get("flagged", False))
-        categories = first.get("categories", {})
-        payload_detection = first.get("payload_detection", {})
+        # v2 API: top-level "flagged" boolean (not nested under "results")
+        flagged = bool(data.get("flagged", False))
 
         risks = []
-        for cat, val in categories.items():
-            if val:
-                risks.append({"type": cat, "source": "lakera_guard"})
-        for cat, val in payload_detection.items():
-            if val:
-                risks.append({"type": f"payload_{cat}", "source": "lakera_guard"})
+        for item in data.get("breakdown", []):
+            if item.get("detected"):
+                risks.append({
+                    "type": item.get("detector_type", "unknown"),
+                    "confidence": item.get("result", ""),
+                    "source": "lakera_guard",
+                })
 
         return flagged, (1.0 if flagged else 0.0), risks
 
