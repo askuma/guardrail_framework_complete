@@ -32,6 +32,7 @@ _PRESIDIO_SDK: bool = (
 )
 _presidio_analyzer: Any = None
 _presidio_anonymizer: Any = None
+_BOTO3_SDK: bool = _ilu.find_spec("boto3") is not None
 
 if _PRESIDIO_SDK:
     try:
@@ -108,6 +109,9 @@ class GuardrailBackend(str, Enum):
     PRESIDIO = "presidio"
     LAKERA = "lakera"
     GA_GUARD = "ga_guard"
+    OPENAI_MODERATION    = "openai_moderation"
+    AZURE_CONTENT_SAFETY = "azure_content_safety"
+    AWS_BEDROCK          = "aws_bedrock"
     CUSTOM = "custom"
 
 
@@ -916,6 +920,537 @@ class GAGuardBackend(GuardrailBackendInterface):
         return True
 
 
+# ── OpenAI Moderation backend ──────────────────────────────────────────────────
+
+
+class OpenAIModerationBackend(GuardrailBackendInterface):
+    """
+    OpenAI Moderation API backend.
+
+    Calls POST https://api.openai.com/v1/moderations and maps OpenAI
+    categories to RiskCategory.  Returns BLOCK when flagged=true, ALLOW
+    when false.  Gracefully skips (ALLOW pass-through) when OPENAI_API_KEY
+    is absent so the rest of the policy pipeline keeps running.
+
+    Requires OPENAI_API_KEY env var (or api_key in policy rules).
+    """
+
+    _API_URL = "https://api.openai.com/v1/moderations"
+
+    # Maps OpenAI moderation categories to internal RiskCategory values.
+    # Sub-categories inherit the parent mapping.
+    _CATEGORY_MAP: Dict[str, "RiskCategory"] = {
+        "hate":                   RiskCategory.JAILBREAKING,
+        "hate/threatening":       RiskCategory.JAILBREAKING,
+        "harassment":             RiskCategory.JAILBREAKING,
+        "harassment/threatening": RiskCategory.JAILBREAKING,
+        "self-harm":              RiskCategory.JAILBREAKING,
+        "self-harm/intent":       RiskCategory.JAILBREAKING,
+        "self-harm/instructions": RiskCategory.JAILBREAKING,
+        "sexual":                 RiskCategory.JAILBREAKING,
+        "sexual/minors":          RiskCategory.JAILBREAKING,
+        "violence":               RiskCategory.JAILBREAKING,
+        "violence/graphic":       RiskCategory.JAILBREAKING,
+        "illicit":                RiskCategory.PROMPT_INJECTION,
+        "illicit/violent":        RiskCategory.PROMPT_INJECTION,
+    }
+
+    def _api_key(self) -> Optional[str]:
+        return (
+            os.getenv("OPENAI_API_KEY", "").strip()
+            or self.config.get("api_key")
+            or None
+        )
+
+    def _skipped_result(self, original_text: str = "") -> GuardrailResult:
+        r = GuardrailResult(backend_used=GuardrailBackend.OPENAI_MODERATION)
+        r.passed = True
+        r.action = ActionType.ALLOW
+        r.risk_score = 0.0
+        r.original_text = original_text
+        r.modified_text = original_text
+        r.findings = {"skipped": True, "reason": "OPENAI_API_KEY not configured"}
+        return r
+
+    def _call_api(self, text: str) -> Tuple[bool, float, List[Dict]]:
+        """Returns (flagged, max_category_score, detected_risks)."""
+        payload = json.dumps({"input": text}).encode()
+        req = urllib.request.Request(
+            self._API_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {self._api_key()}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+
+        item = data.get("results", [{}])[0]
+        flagged = bool(item.get("flagged", False))
+        categories = item.get("categories", {})
+        scores = item.get("category_scores", {})
+
+        risks: List[Dict] = []
+        for cat, is_flagged in categories.items():
+            if is_flagged:
+                risk_cat = self._CATEGORY_MAP.get(cat, RiskCategory.JAILBREAKING)
+                risks.append({
+                    "type": risk_cat.value,
+                    "category": cat,
+                    "score": scores.get(cat, 0.0),
+                    "source": "openai_moderation",
+                })
+
+        max_score = max(scores.values(), default=0.0) if scores else 0.0
+        return flagged, max_score, risks
+
+    def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._api_key():
+            return self._skipped_result()
+        result = GuardrailResult(backend_used=GuardrailBackend.OPENAI_MODERATION)
+        start = time.time()
+        try:
+            flagged, score, risks = self._call_api(text)
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = ActionType.BLOCK
+                result.severity = "critical"
+        except Exception as exc:
+            self.logger.error("OpenAI Moderation API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"OpenAI Moderation API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._api_key():
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.OPENAI_MODERATION)
+        start = time.time()
+        result.original_text = text
+        try:
+            flagged, score, risks = self._call_api(text)
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = ActionType.REDACT
+                result.severity = "critical"
+                from .actions import rewrite_text
+                result.modified_text = rewrite_text(text, risks)
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("OpenAI Moderation API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"OpenAI Moderation API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
+                           _context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.OPENAI_MODERATION)
+        blocked, reason = self._check_tools(tool_name)
+        if blocked:
+            result.passed = False
+            result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
+            result.detected_risks.append({
+                "type": RiskCategory.MALICIOUS_TOOL_USE.value,
+                "tool": tool_name,
+                "reason": reason,
+            })
+        return result
+
+    def apply_policy(self, _policy: GuardrailPolicy) -> bool:
+        return True
+
+    def health_check(self) -> Dict[str, Any]:
+        if not self._api_key():
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.OPENAI_MODERATION.value,
+                "reason": "OPENAI_API_KEY not configured",
+            }
+        return {"status": "ok", "backend": GuardrailBackend.OPENAI_MODERATION.value}
+
+
+# ── Azure Content Safety backend ───────────────────────────────────────────────
+
+
+class AzureContentSafetyBackend(GuardrailBackendInterface):
+    """
+    Azure AI Content Safety backend.
+
+    Calls POST {endpoint}/contentsafety/text:analyze (api-version 2023-10-01)
+    and maps Azure severity scores (0–6) to ActionType:
+        0–2  → ALLOW
+        3–4  → ESCALATE
+        5–6  → BLOCK
+
+    Gracefully skips (ALLOW pass-through) when the required env vars are
+    absent so the rest of the policy pipeline keeps running.
+
+    Requires:
+        AZURE_CONTENT_SAFETY_ENDPOINT — e.g. https://myresource.cognitiveservices.azure.com
+        AZURE_CONTENT_SAFETY_KEY      — subscription key
+    """
+
+    _API_VERSION = "2023-10-01"
+
+    _CATEGORY_MAP: Dict[str, "RiskCategory"] = {
+        "Hate":      RiskCategory.JAILBREAKING,
+        "Violence":  RiskCategory.JAILBREAKING,
+        "Sexual":    RiskCategory.JAILBREAKING,
+        "SelfHarm":  RiskCategory.JAILBREAKING,
+    }
+
+    def _endpoint(self) -> Optional[str]:
+        ep = (
+            os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", "").strip()
+            or self.config.get("endpoint")
+            or None
+        )
+        if ep:
+            _validate_external_url(ep)
+        return ep
+
+    def _api_key(self) -> Optional[str]:
+        return (
+            os.getenv("AZURE_CONTENT_SAFETY_KEY", "").strip()
+            or self.config.get("api_key")
+            or None
+        )
+
+    def _skipped_result(self, original_text: str = "") -> GuardrailResult:
+        r = GuardrailResult(backend_used=GuardrailBackend.AZURE_CONTENT_SAFETY)
+        r.passed = True
+        r.action = ActionType.ALLOW
+        r.risk_score = 0.0
+        r.original_text = original_text
+        r.modified_text = original_text
+        r.findings = {
+            "skipped": True,
+            "reason": "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured",
+        }
+        return r
+
+    @staticmethod
+    def _severity_to_action(max_severity: int) -> ActionType:
+        if max_severity >= 5:
+            return ActionType.BLOCK
+        if max_severity >= 3:
+            return ActionType.ESCALATE
+        return ActionType.ALLOW
+
+    def _call_api(self, text: str) -> Tuple[bool, float, List[Dict], int]:
+        """Returns (flagged, risk_score, detected_risks, max_severity)."""
+        endpoint = self._endpoint() or ""
+        api_key  = self._api_key()  or ""
+        url = (
+            f"{endpoint.rstrip('/')}/contentsafety/text:analyze"
+            f"?api-version={self._API_VERSION}"
+        )
+        payload = json.dumps({"text": text}).encode()
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Ocp-Apim-Subscription-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+
+        max_severity = 0
+        risks: List[Dict] = []
+
+        for cat_result in data.get("categoriesAnalysis", []):
+            cat_name = cat_result.get("category", "")
+            severity = int(cat_result.get("severity", 0))
+            if severity > max_severity:
+                max_severity = severity
+            if severity > 0:
+                risk_cat = self._CATEGORY_MAP.get(cat_name, RiskCategory.JAILBREAKING)
+                risks.append({
+                    "type": risk_cat.value,
+                    "category": cat_name,
+                    "severity": severity,
+                    "source": "azure_content_safety",
+                })
+
+        action = self._severity_to_action(max_severity)
+        flagged = action in (ActionType.ESCALATE, ActionType.BLOCK)
+        score = round(max_severity / 6.0, 4)
+        return flagged, score, risks, max_severity
+
+    def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._endpoint() or not self._api_key():
+            return self._skipped_result()
+        result = GuardrailResult(backend_used=GuardrailBackend.AZURE_CONTENT_SAFETY)
+        start = time.time()
+        try:
+            flagged, score, risks, max_severity = self._call_api(text)
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = self._severity_to_action(max_severity)
+                result.severity = "critical" if max_severity >= 5 else "warning"
+        except Exception as exc:
+            self.logger.error("Azure Content Safety API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Content Safety API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._endpoint() or not self._api_key():
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.AZURE_CONTENT_SAFETY)
+        start = time.time()
+        result.original_text = text
+        try:
+            flagged, score, risks, max_severity = self._call_api(text)
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = self._severity_to_action(max_severity)
+                result.severity = "critical" if max_severity >= 5 else "warning"
+                from .actions import rewrite_text
+                result.modified_text = rewrite_text(text, risks)
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("Azure Content Safety API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"Azure Content Safety API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
+                           _context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.AZURE_CONTENT_SAFETY)
+        blocked, reason = self._check_tools(tool_name)
+        if blocked:
+            result.passed = False
+            result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
+            result.detected_risks.append({
+                "type": RiskCategory.MALICIOUS_TOOL_USE.value,
+                "tool": tool_name,
+                "reason": reason,
+            })
+        return result
+
+    def apply_policy(self, _policy: GuardrailPolicy) -> bool:
+        return True
+
+    def health_check(self) -> Dict[str, Any]:
+        if not self._endpoint() or not self._api_key():
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.AZURE_CONTENT_SAFETY.value,
+                "reason": "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY not configured",
+            }
+        return {"status": "ok", "backend": GuardrailBackend.AZURE_CONTENT_SAFETY.value}
+
+
+# ── AWS Bedrock Guardrails backend ─────────────────────────────────────────────
+
+
+class AWSBedrockBackend(GuardrailBackendInterface):
+    """
+    AWS Bedrock Guardrails backend.
+
+    Calls boto3 bedrock-runtime.apply_guardrail() and maps the response:
+        GUARDRAIL_INTERVENED → BLOCK
+        NONE                 → ALLOW
+
+    Gracefully skips (ALLOW pass-through) when the required env vars are
+    absent so the rest of the policy pipeline keeps running.
+
+    Requires:
+        AWS_ACCESS_KEY_ID              — IAM access key
+        AWS_SECRET_ACCESS_KEY          — IAM secret key
+        AWS_DEFAULT_REGION             — e.g. us-east-1
+        AWS_BEDROCK_GUARDRAIL_ID       — Bedrock guardrail resource ID
+        AWS_BEDROCK_GUARDRAIL_VERSION  — e.g. DRAFT or a numeric version
+    """
+
+    def _creds(self) -> Dict[str, str]:
+        return {
+            "access_key":       os.getenv("AWS_ACCESS_KEY_ID", "").strip()            or self.config.get("aws_access_key_id", ""),
+            "secret_key":       os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()        or self.config.get("aws_secret_access_key", ""),
+            "region":           os.getenv("AWS_DEFAULT_REGION", "").strip()           or self.config.get("aws_default_region", ""),
+            "guardrail_id":     os.getenv("AWS_BEDROCK_GUARDRAIL_ID", "").strip()     or self.config.get("aws_bedrock_guardrail_id", ""),
+            "guardrail_version": os.getenv("AWS_BEDROCK_GUARDRAIL_VERSION", "").strip() or self.config.get("aws_bedrock_guardrail_version", "DRAFT"),
+        }
+
+    def _creds_present(self) -> bool:
+        c = self._creds()
+        return bool(c["region"] and c["guardrail_id"])
+
+    def _skipped_result(self, original_text: str = "") -> GuardrailResult:
+        r = GuardrailResult(backend_used=GuardrailBackend.AWS_BEDROCK)
+        r.passed = True
+        r.action = ActionType.ALLOW
+        r.risk_score = 0.0
+        r.original_text = original_text
+        r.modified_text = original_text
+        r.findings = {
+            "skipped": True,
+            "reason": (
+                "AWS_DEFAULT_REGION and AWS_BEDROCK_GUARDRAIL_ID are required. "
+                "Also set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or configure "
+                "an IAM instance profile."
+            ),
+        }
+        return r
+
+    def _call_api(self, text: str, source: str = "INPUT") -> Tuple[bool, float, List[Dict]]:
+        """Returns (flagged, risk_score, detected_risks)."""
+        if not _BOTO3_SDK:
+            raise ImportError("boto3 is not installed. Run: pip install boto3>=1.28.0")
+
+        import boto3  # noqa: PLC0415
+
+        c = self._creds()
+        client = boto3.client(
+            "bedrock-runtime",
+            region_name=c["region"] or None,
+            aws_access_key_id=c["access_key"] or None,
+            aws_secret_access_key=c["secret_key"] or None,
+        )
+
+        response = client.apply_guardrail(
+            guardrailIdentifier=c["guardrail_id"],
+            guardrailVersion=c["guardrail_version"] or "DRAFT",
+            source=source,
+            content=[{"text": {"text": text}}],
+        )
+
+        bedrock_action = response.get("action", "NONE")
+        flagged = bedrock_action == "GUARDRAIL_INTERVENED"
+
+        risks: List[Dict] = []
+        if flagged:
+            for assessment in response.get("assessments", []):
+                # Content policy violations
+                for f in assessment.get("contentPolicy", {}).get("filters", []):
+                    if f.get("action") == "BLOCKED":
+                        risks.append({
+                            "type": RiskCategory.JAILBREAKING.value,
+                            "category": f.get("type", "content"),
+                            "confidence": f.get("confidence", "LOW"),
+                            "source": "aws_bedrock",
+                        })
+                # Topic policy violations
+                for topic in assessment.get("topicPolicy", {}).get("topics", []):
+                    if topic.get("action") == "BLOCKED":
+                        risks.append({
+                            "type": RiskCategory.PROMPT_INJECTION.value,
+                            "topic": topic.get("name", "unknown"),
+                            "source": "aws_bedrock",
+                        })
+                # Sensitive information policy
+                for pii in assessment.get("sensitiveInformationPolicy", {}).get("piiEntities", []):
+                    if pii.get("action") == "BLOCKED":
+                        risks.append({
+                            "type": RiskCategory.DATA_LEAKAGE.value,
+                            "pii_type": pii.get("type", "unknown"),
+                            "source": "aws_bedrock",
+                        })
+
+        return flagged, (1.0 if flagged else 0.0), risks
+
+    def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._creds_present():
+            return self._skipped_result()
+        result = GuardrailResult(backend_used=GuardrailBackend.AWS_BEDROCK)
+        start = time.time()
+        try:
+            flagged, score, risks = self._call_api(text, source="INPUT")
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = ActionType.BLOCK
+                result.severity = "critical"
+        except Exception as exc:
+            self.logger.error("AWS Bedrock API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"AWS Bedrock API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not self._creds_present():
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.AWS_BEDROCK)
+        start = time.time()
+        result.original_text = text
+        try:
+            flagged, score, risks = self._call_api(text, source="OUTPUT")
+            result.risk_score = score
+            result.passed = not flagged
+            result.detected_risks = risks
+            if flagged:
+                result.action = ActionType.REDACT
+                result.severity = "critical"
+                from .actions import rewrite_text
+                result.modified_text = rewrite_text(text, risks)
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("AWS Bedrock API error: %s", exc)
+            from .testing import fail_closed_result
+            return fail_closed_result(f"AWS Bedrock API error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
+                           _context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.AWS_BEDROCK)
+        blocked, reason = self._check_tools(tool_name)
+        if blocked:
+            result.passed = False
+            result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
+            result.detected_risks.append({
+                "type": RiskCategory.MALICIOUS_TOOL_USE.value,
+                "tool": tool_name,
+                "reason": reason,
+            })
+        return result
+
+    def apply_policy(self, _policy: GuardrailPolicy) -> bool:
+        return True
+
+    def health_check(self) -> Dict[str, Any]:
+        if not self._creds_present():
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.AWS_BEDROCK.value,
+                "reason": "AWS_DEFAULT_REGION and AWS_BEDROCK_GUARDRAIL_ID not configured",
+            }
+        if not _BOTO3_SDK:
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.AWS_BEDROCK.value,
+                "reason": "boto3 not installed — run: pip install boto3>=1.28.0",
+            }
+        return {"status": "ok", "backend": GuardrailBackend.AWS_BEDROCK.value}
+
+
 # ── Framework orchestrator ─────────────────────────────────────────────────────
 
 class GuardrailFramework:
@@ -936,8 +1471,11 @@ class GuardrailFramework:
         self.backends[GuardrailBackend.NEMO.value]          = NemoGuardrailsBackend({})
         self.backends[GuardrailBackend.GUARDRAILS_AI.value] = GuardrailsAIBackend({})
         self.backends[GuardrailBackend.PRESIDIO.value]      = PresidioBackend({})
-        self.backends[GuardrailBackend.LAKERA.value]        = LakeraGuardBackend({})
-        self.backends[GuardrailBackend.GA_GUARD.value]      = GAGuardBackend({})
+        self.backends[GuardrailBackend.LAKERA.value]               = LakeraGuardBackend({})
+        self.backends[GuardrailBackend.GA_GUARD.value]             = GAGuardBackend({})
+        self.backends[GuardrailBackend.OPENAI_MODERATION.value]    = OpenAIModerationBackend({})
+        self.backends[GuardrailBackend.AZURE_CONTENT_SAFETY.value] = AzureContentSafetyBackend({})
+        self.backends[GuardrailBackend.AWS_BEDROCK.value]          = AWSBedrockBackend({})
 
         any_real_sdk = (
             _NEMO_SDK
