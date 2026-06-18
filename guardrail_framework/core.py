@@ -11,6 +11,7 @@ import logging
 import os
 import re as _re
 import time
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
@@ -973,7 +974,11 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
         return r
 
     def _call_api(self, text: str) -> Tuple[bool, float, List[Dict]]:
-        """Returns (flagged, max_category_score, detected_risks)."""
+        """Returns (flagged, max_category_score, detected_risks).
+
+        Retries up to 3 times on HTTP 429 with exponential back-off (1 s, 2 s,
+        4 s) to handle free-tier rate limits gracefully.
+        """
         payload = json.dumps({"input": text}).encode()
         req = urllib.request.Request(
             self._API_URL,
@@ -983,8 +988,22 @@ class OpenAIModerationBackend(GuardrailBackendInterface):
                 "Content-Type": "application/json",
             },
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read())
+                break  # success — exit retry loop
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429 and attempt < max_retries - 1:
+                    wait = 2 ** attempt          # 1 s, 2 s, 4 s
+                    self.logger.warning(
+                        "OpenAI Moderation 429 rate-limited — retrying in %ds (attempt %d/%d)",
+                        wait, attempt + 1, max_retries,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise  # non-429 or final attempt — propagate
 
         item = data.get("results", [{}])[0]
         flagged = bool(item.get("flagged", False))
@@ -1147,15 +1166,27 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
             return ActionType.ESCALATE
         return ActionType.ALLOW
 
+    # Azure Content Safety hard limit for a single text:analyze call.
+    _MAX_TEXT_CHARS = 10_000
+
     def _call_api(self, text: str) -> Tuple[bool, float, List[Dict], int]:
-        """Returns (flagged, risk_score, detected_risks, max_severity)."""
+        """Returns (flagged, risk_score, detected_risks, max_severity).
+
+        Truncates input to 10,000 characters (Azure API limit) and retries
+        once on timeout with a 30-second deadline.  Surfaces the 400 response
+        body in the exception message so the root cause is visible in logs.
+        """
         endpoint = self._endpoint() or ""
         api_key  = self._api_key()  or ""
+
+        # Truncate — Azure returns 400 if the text exceeds 10,000 chars.
+        safe_text = text[: self._MAX_TEXT_CHARS]
+
         url = (
             f"{endpoint.rstrip('/')}/contentsafety/text:analyze"
             f"?api-version={self._API_VERSION}"
         )
-        payload = json.dumps({"text": text}).encode()
+        payload = json.dumps({"text": safe_text}).encode()
         req = urllib.request.Request(
             url,
             data=payload,
@@ -1164,8 +1195,32 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
                 "Content-Type": "application/json",
             },
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
+
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read())
+                break  # success
+            except urllib.error.HTTPError as exc:
+                # Read and attach the response body so 400 details appear in logs.
+                try:
+                    body = exc.read().decode(errors="replace")
+                except Exception:
+                    body = "(unreadable)"
+                raise urllib.error.HTTPError(
+                    exc.url, exc.code,
+                    f"{exc.reason} — {body}",
+                    exc.headers, None,
+                ) from None
+            except OSError:  # socket.timeout is an OSError subclass
+                if attempt < max_retries - 1:
+                    self.logger.warning(
+                        "Azure Content Safety timed out — retrying (attempt %d/%d)",
+                        attempt + 1, max_retries,
+                    )
+                    continue
+                raise
 
         max_severity = 0
         risks: List[Dict] = []
