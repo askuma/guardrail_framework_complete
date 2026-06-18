@@ -1,0 +1,158 @@
+# Required GitHub Secrets:
+# LAKERA_GUARD_API_KEY   — from platform.lakera.ai
+# GA_GUARD_API_KEY       — from your GA Guard provider
+# GA_GUARD_API_URL       — GA Guard endpoint URL
+# NEMO_ANTHROPIC_API_KEY — from console.anthropic.com
+
+name: Monthly Benchmark
+
+on:
+  schedule:
+    - cron: "0 6 1 * *"   # 1st of every month at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Report year (leave blank = current year)"
+        type: string
+        default: ""
+      month:
+        description: "Report month 1-12 (leave blank = current month)"
+        type: string
+        default: ""
+      dry_run:
+        description: "Dry run — skip unreachable backends silently"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  generate-benchmark:
+    name: Generate monthly benchmark report
+    runs-on: ubuntu-latest
+
+    env:
+      LAKERA_GUARD_API_KEY:   ${{ secrets.LAKERA_GUARD_API_KEY }}
+      GA_GUARD_API_KEY:       ${{ secrets.GA_GUARD_API_KEY }}
+      GA_GUARD_API_URL:       ${{ secrets.GA_GUARD_API_URL }}
+      NEMO_ANTHROPIC_API_KEY: ${{ secrets.NEMO_ANTHROPIC_API_KEY }}
+      GUARDRAIL_AUTH_ENABLED: "false"
+      GUARDRAIL_DB_URL:       "sqlite:///./benchmarks/benchmark.db"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for prior-month delta
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          python -m spacy download en_core_web_lg
+
+      - name: Compute year and month
+        id: period
+        run: |
+          if [ -n "${{ inputs.year }}" ]; then
+            YEAR="${{ inputs.year }}"
+          else
+            YEAR=$(date -u +%Y)
+          fi
+          if [ -n "${{ inputs.month }}" ]; then
+            MONTH="${{ inputs.month }}"
+          else
+            MONTH=$(date -u +%-m)
+          fi
+          MONTH_NAME=$(python3 -c "import calendar; print(calendar.month_name[int('$MONTH')])")
+          echo "year=$YEAR"         >> "$GITHUB_OUTPUT"
+          echo "month=$MONTH"       >> "$GITHUB_OUTPUT"
+          echo "month_name=$MONTH_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Run benchmark
+        id: benchmark
+        run: |
+          python3 benchmark_report.py \
+            --year  "${{ steps.period.outputs.year }}"  \
+            --month "${{ steps.period.outputs.month }}" \
+            --dry-run "${{ inputs.dry_run || 'false' }}" \
+            --output-dir ./benchmarks/
+
+      - name: Commit benchmark artifacts
+        run: |
+          git config user.name  "guardrailprobe-bot"
+          git config user.email "bot@guardrailprobe.com"
+          git add benchmarks/ docs/
+          git diff --staged --quiet || \
+            git commit -m "benchmark: ${{ steps.period.outputs.year }}-${{ steps.period.outputs.month }} monthly report"
+          git push
+
+      - name: Read markdown report
+        id: read_md
+        run: |
+          MD_PATH="benchmarks/benchmark_${{ steps.period.outputs.year }}_$(printf '%02d' ${{ steps.period.outputs.month }}).md"
+          if [ -f "$MD_PATH" ]; then
+            # GitHub Actions max issue body is 65536 chars; truncate if needed
+            CONTENT=$(head -c 60000 "$MD_PATH")
+            # Escape for JSON
+            CONTENT="${CONTENT//'%'/'%25'}"
+            CONTENT="${CONTENT//$'\n'/'%0A'}"
+            CONTENT="${CONTENT//$'\r'/'%0D'}"
+            echo "body=$CONTENT" >> "$GITHUB_OUTPUT"
+            echo "found=true"    >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open benchmark summary issue
+        if: steps.read_md.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = decodeURIComponent(
+              '${{ steps.read_md.outputs.body }}'
+                .replace(/%25/g, '%')
+                .replace(/%0A/g, '\n')
+                .replace(/%0D/g, '\r')
+            );
+            await github.rest.issues.create({
+              owner:  context.repo.owner,
+              repo:   context.repo.repo,
+              title:  'Benchmark Report — ${{ steps.period.outputs.month_name }} ${{ steps.period.outputs.year }}',
+              body:   body,
+              labels: ['benchmark', 'automated'],
+            });
+
+      - name: Open failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner:  context.repo.owner,
+              repo:   context.repo.repo,
+              title:  'Benchmark generation FAILED — ${{ steps.period.outputs.month_name }} ${{ steps.period.outputs.year }}',
+              body: [
+                '## Benchmark generation failed',
+                '',
+                '**Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+                '',
+                '### Debug steps',
+                '',
+                '1. Check the workflow run logs linked above for the full stack trace.',
+                '2. Reproduce locally:',
+                '   ```bash',
+                '   pip install -e ".[dev]"',
+                '   python3 benchmark_report.py --year ${{ steps.period.outputs.year }} --month ${{ steps.period.outputs.month }} --dry-run',
+                '   ```',
+                '3. Verify secrets are configured: `LAKERA_GUARD_API_KEY`, `GA_GUARD_API_KEY`, `GA_GUARD_API_URL`, `NEMO_ANTHROPIC_API_KEY`.',
+              ].join('\n'),
+              labels: ['bug', 'automated'],
+            });
