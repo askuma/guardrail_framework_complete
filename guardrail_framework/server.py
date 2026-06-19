@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
@@ -24,7 +24,7 @@ from guardrail_framework.core import (
 )
 from guardrail_framework.compiler import UnifiedPolicyBuilder, PolicyTemplates, PolicyCompiler
 from guardrail_framework.observability import ObservabilityStack
-from guardrail_framework.auth import APIKeyMiddleware, load_api_keys
+from guardrail_framework.auth import APIKeyMiddleware, load_api_keys, load_admin_keys
 from guardrail_framework.persistence import PersistenceLayer
 
 # ─── App Setup ────────────────────────────────────────────────────────────────
@@ -89,6 +89,25 @@ app.add_middleware(
 # API key authentication — stored at module level so route handlers can reuse it
 _api_keys = load_api_keys()
 app.add_middleware(APIKeyMiddleware, api_keys=_api_keys, enabled=_AUTH_ENABLED)
+
+# Admin key tier — subset of keys allowed to call destructive write operations.
+# Falls back to all API keys when GUARDRAIL_ADMIN_KEYS is unset (backward-compatible).
+_admin_keys = load_admin_keys(_api_keys)
+
+
+def require_admin_key(request: Request) -> None:
+    """FastAPI dependency: reject non-admin keys on destructive endpoints."""
+    if not _AUTH_ENABLED:
+        return
+    key = request.headers.get("X-API-Key", "")
+    if key not in _admin_keys:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This operation requires an admin API key. "
+                "Set GUARDRAIL_ADMIN_KEYS in your environment and pass one of those keys."
+            ),
+        )
 
 # ─── Request / Response Models ────────────────────────────────────────────────
 
@@ -304,7 +323,7 @@ def update_policy(policy_id: str, req: UpdatePolicyRequest):
     return {"message": "Policy updated", "policy_id": policy_id}
 
 
-@app.delete("/policies/{policy_id}", tags=["Policies"])
+@app.delete("/policies/{policy_id}", tags=["Policies"], dependencies=[Depends(require_admin_key)])
 def delete_policy(policy_id: str):
     """Delete a policy."""
     if not framework.delete_policy(policy_id):
@@ -688,7 +707,7 @@ def export_bundle():
     )
 
 
-@app.post("/bundles/import", tags=["Bundle Distribution"])
+@app.post("/bundles/import", tags=["Bundle Distribution"], dependencies=[Depends(require_admin_key)])
 async def import_bundle(request: Request):
     """
     Import a tar.gz policy bundle. Atomically replaces matching policies.
@@ -713,7 +732,7 @@ async def import_bundle(request: Request):
     }
 
 
-@app.post("/bundles/poller/start", tags=["Bundle Distribution"])
+@app.post("/bundles/poller/start", tags=["Bundle Distribution"], dependencies=[Depends(require_admin_key)])
 def start_bundle_poller(cfg: BundlePollerConfig):
     """Start polling a remote URL for bundle updates."""
     global _bundle_poller
@@ -736,7 +755,7 @@ def start_bundle_poller(cfg: BundlePollerConfig):
     return {"message": "Bundle poller started", "url": cfg.bundle_url}
 
 
-@app.post("/bundles/poller/stop", tags=["Bundle Distribution"])
+@app.post("/bundles/poller/stop", tags=["Bundle Distribution"], dependencies=[Depends(require_admin_key)])
 def stop_bundle_poller():
     global _bundle_poller
     if _bundle_poller:
@@ -773,7 +792,7 @@ def list_policy_versions(policy_id: str):
     }
 
 
-@app.post("/policies/{policy_id}/rollback", tags=["Versioning"])
+@app.post("/policies/{policy_id}/rollback", tags=["Versioning"], dependencies=[Depends(require_admin_key)])
 def rollback_policy(policy_id: str, req: RollbackRequest):
     """Roll a policy back to a specific snapshot."""
     ok = version_store.rollback(framework, policy_id, req.snapshot_id)
