@@ -296,11 +296,11 @@ class BenchmarkRunner:
         self._runner    = RedTeamRunner(framework=self._framework)
         self._library   = ProbeLibrary()
 
-        # /app/benchmarks/ inside the container, ./benchmarks/ locally
+        # /app/docs/benchmarks/ inside the container, ./docs/benchmarks/ locally
         self._default_output = (
-            Path("/app/benchmarks")
+            Path("/app/docs/benchmarks")
             if Path("/app").is_dir()
-            else Path("./benchmarks")
+            else Path("./docs/benchmarks")
         )
         self._docs_index = Path("docs/latest_index.json")
 
@@ -1129,8 +1129,8 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
-        "--output-dir", type=str, default="./benchmarks/",
-        help="Directory for artifact files (default: ./benchmarks/)",
+        "--output-dir", type=str, default="./docs/benchmarks/",
+        help="Directory for artifact files (default: ./docs/benchmarks/)",
     )
     return p.parse_args(argv)
 
