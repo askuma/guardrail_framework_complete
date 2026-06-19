@@ -930,6 +930,10 @@ function RedTeamTab({ toast }) {
   const [baselineRunId,   setBaselineRunId]   = useState('');
   const [baselineReport,  setBaselineReport]  = useState(null);
   const [baselineLoading, setBaselineLoading] = useState(false);
+  const [runHistory,      setRunHistory]      = useState(() => {
+    try { return JSON.parse(localStorage.getItem('redteam_run_history') || '[]'); }
+    catch { return []; }
+  });
 
   useEffect(() => {
     api.getBackends()
@@ -966,7 +970,7 @@ function RedTeamTab({ toast }) {
   };
 
   const runCompare = async () => {
-    setLoading(true); setCompareReport(null); setBenchmarkArts(null);
+    setLoading(true); setBenchmarkArts(null);
     try {
       const r = await api.redteamCompare({
         backends: null,
@@ -977,6 +981,19 @@ function RedTeamTab({ toast }) {
       if (r.benchmark) setBenchmarkArts(r.benchmark);
       const saved = r.benchmark ? ' — report saved' : r.benchmark_error ? ' (save failed)' : '';
       toast(`Comparison complete: ${r.backends_tested.length} backends${saved}`, r.benchmark_error ? 'warn' : 'ok');
+      if (r.run_id) {
+        setRunHistory(prev => {
+          const entry = {
+            run_id:    r.run_id,
+            timestamp: r.timestamp || new Date().toISOString(),
+            best:      r.best_overall || '—',
+            backends:  r.backends_tested?.length ?? 0,
+          };
+          const next = [entry, ...prev.filter(e => e.run_id !== r.run_id)].slice(0, 10);
+          try { localStorage.setItem('redteam_run_history', JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
     } catch (e) { toast(e.message, 'error'); }
     finally { setLoading(false); }
   };
@@ -1095,7 +1112,20 @@ function RedTeamTab({ toast }) {
       {/* ── Section 2: Comparison Table ── */}
       {compareReport && (
         <Card style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 16px' }}>Comparison Table</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: 0 }}>Comparison Table</h3>
+            {compareReport.run_id && (
+              <span style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
+                run: {compareReport.run_id.slice(0, 8)}…
+                <button
+                  title="Copy full run ID"
+                  onClick={() => { navigator.clipboard?.writeText(compareReport.run_id); toast('Run ID copied', 'ok'); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.blue, fontSize: 11, padding: '0 2px' }}>
+                  ⎘
+                </button>
+              </span>
+            )}
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
@@ -1192,6 +1222,38 @@ function RedTeamTab({ toast }) {
               ↓ PDF
             </a>
           )}
+        </Card>
+      )}
+
+      {/* ── Run history ── */}
+      {runHistory.length > 0 && (
+        <Card style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: '0 0 10px' }}>Run History (last {runHistory.length})</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ color: C.muted, textAlign: 'left' }}>
+                <th style={{ padding: '4px 8px' }}>Run ID</th>
+                <th style={{ padding: '4px 8px' }}>Timestamp</th>
+                <th style={{ padding: '4px 8px' }}>Backends</th>
+                <th style={{ padding: '4px 8px' }}>Best</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runHistory.map((h, i) => (
+                <tr key={h.run_id} style={{ borderTop: `1px solid ${C.border}`, background: i === 0 ? C.surface : 'transparent' }}>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', color: C.blue }}>
+                    <span title={h.run_id} style={{ cursor: 'pointer' }}
+                      onClick={() => { navigator.clipboard?.writeText(h.run_id); toast('Run ID copied', 'ok'); }}>
+                      {h.run_id.slice(0, 8)}…
+                    </span>
+                  </td>
+                  <td style={{ padding: '4px 8px', color: C.muted }}>{new Date(h.timestamp).toLocaleString()}</td>
+                  <td style={{ padding: '4px 8px', textAlign: 'center' }}>{h.backends}</td>
+                  <td style={{ padding: '4px 8px', color: C.green }}>{h.best}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Card>
       )}
 
@@ -1515,7 +1577,10 @@ export default function App() {
         {tab === 'alerts'   && <AlertsTab   toast={showToast} />}
         {tab === 'abtests'  && <ABTestsTab  toast={showToast} />}
         {tab === 'audit'    && <AuditTab />}
-        {tab === 'redteam'  && <RedTeamTab  toast={showToast} />}
+        {/* RedTeamTab stays mounted to preserve compareReport/benchmarkArts state across tab switches */}
+        <div style={{ display: tab === 'redteam' ? 'block' : 'none' }}>
+          <RedTeamTab toast={showToast} />
+        </div>
       </div>
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}
