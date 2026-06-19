@@ -42,6 +42,8 @@ The framework **does not** protect against:
 
 All REST endpoints require an `X-API-Key` header. Configure keys via `GUARDRAIL_API_KEYS`.
 
+**Admin key tier:** Destructive write operations require a key from `GUARDRAIL_ADMIN_KEYS` (a subset of `GUARDRAIL_API_KEYS`). This covers `DELETE /policies/{id}`, `POST /bundles/import`, `POST /bundles/poller/start`, `POST /bundles/poller/stop`, and `POST /policies/{id}/rollback`. When `GUARDRAIL_ADMIN_KEYS` is unset, all API keys are treated as admin (backward-compatible default). Set it explicitly in production to prevent read/check callers from modifying guardrail policies.
+
 Public (unauthenticated) paths are explicitly allowlisted and limited to:
 - `/health`, `/ready` — liveness/readiness probes
 - `/docs`, `/redoc`, `/openapi.json` — API documentation (disable in production if desired by setting `GUARDRAIL_DOCS_ENABLED=false`)
@@ -64,7 +66,7 @@ Rate limiting fails **open** on Redis unavailability — outages do not block le
 
 ### Secrets Management
 
-- Store secrets (`GUARDRAIL_API_KEYS`, `GUARDRAIL_DB_URL`, backend API keys) in a secrets manager (AWS Secrets Manager, HashiCorp Vault, Kubernetes Secrets) and inject as environment variables
+- Store secrets (`GUARDRAIL_API_KEYS`, `GUARDRAIL_ADMIN_KEYS`, `GUARDRAIL_DB_URL`, backend API keys) in a secrets manager (AWS Secrets Manager, HashiCorp Vault, Kubernetes Secrets) and inject as environment variables
 - Never commit `.env` to source control — it is in `.gitignore`
 - Rotate API keys regularly; the framework supports multiple simultaneous keys with no downtime
 
