@@ -387,6 +387,63 @@ class BenchmarkRunner:
         )
         return artifacts
 
+    def generate_from_comparison(
+        self,
+        comparison: "ComparisonReport",
+        year: int,
+        month: int,
+        output_dir: Optional[Path] = None,
+    ) -> "BenchmarkArtifacts":
+        """Write JSON/MD/PDF artifacts for an already-completed ComparisonReport.
+
+        Used by the API server so the comparison run is not duplicated: the
+        server calls compare_backends() once, then hands the result here to
+        persist it as a benchmark report.
+        """
+        out_dir = Path(output_dir) if output_dir else self._default_output
+        out_dir.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc)
+
+        backends_tested = [
+            b.value for b in comparison.backends_tested
+            if b.value not in comparison.skipped_backends
+        ]
+        backends_skipped = dict(comparison.skipped_backends)
+        probe_count = sum(r.total_probes for r in comparison.reports.values())
+
+        stem = f"benchmark_{year:04d}_{month:02d}"
+        artifacts = BenchmarkArtifacts(
+            year=year,
+            month=month,
+            run_id=comparison.run_id,
+            pdf_path=None,
+            json_path=str(out_dir / f"{stem}.json"),
+            markdown_path=str(out_dir / f"{stem}.md"),
+            comparison_report=comparison,
+            delta=None,
+            backends_tested=backends_tested,
+            backends_skipped=backends_skipped,
+            probe_count=probe_count,
+            generated_at=now,
+        )
+
+        prior_path = out_dir / _prior_month_filename(year, month)
+        if prior_path.exists():
+            try:
+                artifacts.delta = self._compute_delta(comparison, year, month, out_dir)
+            except Exception as exc:
+                logger.warning("Month-over-month delta failed: %s", exc)
+
+        self._generate_artifacts(artifacts, comparison, artifacts.delta, [])
+        self._update_docs_index(artifacts)
+        logger.info(
+            "Benchmark saved — JSON: %s  MD: %s  PDF: %s",
+            artifacts.json_path,
+            artifacts.markdown_path,
+            artifacts.pdf_path or "(skipped)",
+        )
+        return artifacts
+
     def get_latest_benchmark(self, output_dir: Optional[Path] = None) -> Optional[Dict]:
         """Return the most-recent benchmark JSON as a dict, or None."""
         out_dir = Path(output_dir) if output_dir else self._default_output
