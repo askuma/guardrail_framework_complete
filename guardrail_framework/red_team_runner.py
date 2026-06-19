@@ -41,10 +41,13 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as _FuturesTimeout
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
+
+_BACKEND_TIMEOUT_SECS = 120
 
 from .core import (
     ActionType,
@@ -314,10 +317,29 @@ class RedTeamRunner:
         run_id = str(uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
 
+        active_probes = probes or []
+
+        def _run(backend: GuardrailBackend) -> RedTeamReport:
+            return self.run_against_backend(backend, probes=probes, categories=categories)
+
         reports: Dict[str, RedTeamReport] = {}
-        for backend in backends:
-            r = self.run_against_backend(backend, probes=probes, categories=categories)
-            reports[backend.value] = r
+        with ThreadPoolExecutor(max_workers=len(backends)) as pool:
+            futures: Dict[str, Future] = {
+                b.value: pool.submit(_run, b) for b in backends
+            }
+            for bval, fut in futures.items():
+                try:
+                    reports[bval] = fut.result(timeout=_BACKEND_TIMEOUT_SECS)
+                except _FuturesTimeout:
+                    logger.warning("Backend %s timed out after %ds — marking SKIPPED", bval, _BACKEND_TIMEOUT_SECS)
+                    reports[bval] = _build_timeout_report(
+                        GuardrailBackend(bval), active_probes, timestamp
+                    )
+                except Exception as exc:
+                    logger.error("Backend %s raised %s — marking SKIPPED", bval, exc)
+                    reports[bval] = _build_timeout_report(
+                        GuardrailBackend(bval), active_probes, timestamp, reason=str(exc)
+                    )
 
         # Exclude fully-skipped backends from best/worst ranking.
         active_reports = {k: v for k, v in reports.items() if v.total_probes > 0}
@@ -601,6 +623,38 @@ def _build_report(
         probe_results=probe_results,
         skipped_count=n_skipped,
         skipped_backends=skipped_backends or {},
+    )
+
+
+def _build_timeout_report(
+    backend: GuardrailBackend,
+    probes: List[AttackProbe],
+    timestamp: str,
+    reason: str = "TIMEOUT",
+) -> RedTeamReport:
+    now = datetime.now(timezone.utc).isoformat()
+    probe_results = [
+        ProbeResult(
+            probe=probe,
+            backend=backend,
+            actual_action=None,
+            expected_action=probe.expected_action,
+            passed=None,
+            latency_ms=0.0,
+            timestamp=now,
+            raw_response=GuardrailResult(
+                backend_used=backend,
+                action=ActionType.SKIPPED,
+                findings={"skipped": True, "reason": reason},
+            ),
+            skipped=True,
+            skip_reason=reason,
+        )
+        for probe in probes
+    ]
+    return _build_report(
+        backend, str(uuid4()), timestamp, probe_results,
+        skipped_backends={backend.value: reason},
     )
 
 

@@ -6,14 +6,14 @@
 
 ## TL;DR
 - **Winner:** openai_moderation (100.0% overall)
-- **Best accuracy/latency ratio:** nemo
+- **Best accuracy/latency ratio:** ga_guard
 - **Biggest improvement vs last month:** none this month +0.0%
 - **Biggest regression vs last month:** none this month -0.0%
 - **Backends tested:** 9
 - **Backends skipped:** 0
 - **Total probes run:** 625
-- **Report generated:** 2026-06-18 16:03 UTC
-- **Run ID:** 2717ad31-ef65-4d13-b456-c52f92152154
+- **Report generated:** 2026-06-19 13:42 UTC
+- **Run ID:** f5c1194e-453a-42c2-a9c0-3864711c1929
 
 ---
 
@@ -21,15 +21,15 @@
 
 | Backend | Overall % | vs Last Month | Best Category | Worst Category | Avg Latency |
 |---------|:---------:|:-------------:|:-------------:|:--------------:|:-----------:|
-| nemo | 9.0% | — | LLM01 | LLM03 | 1 ms |
-| guardrails_ai | 9.0% | — | LLM01 | LLM03 | 149 ms |
-| presidio | 6.4% | — | LLM02 | LLM01 | 75 ms |
-| lakera | 83.3% | — | LLM01 | LLM10 | 380 ms |
-| ga_guard | 9.0% | — | LLM01 | LLM03 | 2 ms |
-| openai_moderation | 100.0% | — | LLM01 | LLM01 | 32690 ms |
-| azure_content_safety | 26.9% | — | LLM02 | LLM01 | 1653 ms |
-| azure_prompt_shields | 24.4% | — | LLM01 | LLM09 | 780 ms |
-| aws_bedrock | 59.0% | — | LLM01 | LLM10 | 914 ms |
+| nemo | 2.6% | — | LLM07 | LLM01 | 11 ms |
+| guardrails_ai | 2.6% | — | LLM07 | LLM01 | 74 ms |
+| presidio | 6.4% | — | LLM02 | LLM01 | 120 ms |
+| lakera | 83.3% | — | LLM01 | LLM10 | 502 ms |
+| ga_guard | 9.0% | — | LLM01 | LLM03 | 8 ms |
+| openai_moderation | 100.0% | — | LLM01 | LLM01 | 33694 ms |
+| azure_content_safety | 25.6% | — | LLM02 | LLM01 | 1787 ms |
+| azure_prompt_shields | 24.4% | — | LLM01 | LLM09 | 1345 ms |
+| aws_bedrock | 59.0% | — | LLM01 | LLM10 | 780 ms |
 
 ---
 
@@ -40,10 +40,10 @@
 | LLM01 | Prompt Injection | lakera | 100% | openai_moderation | 100% |
 | LLM02 | Insecure Output | lakera | 81% | aws_bedrock | 76% |
 | LLM03 | Training Data Poisoning | lakera | 100% | aws_bedrock | 100% |
-| LLM04 | Model DoS | lakera | 67% | azure_content_safety | 33% |
+| LLM04 | Model DoS | lakera | 67% | aws_bedrock | 33% |
 | LLM05 | Supply Chain | lakera | 80% | azure_prompt_shields | 40% |
 | LLM06 | Sensitive Info Disclosure | lakera | 100% | aws_bedrock | 50% |
-| LLM07 | Insecure Plugin | lakera | 67% | nemo | 33% |
+| LLM07 | Insecure Plugin | lakera | 67% | ga_guard | 33% |
 | LLM08 | Excessive Agency | lakera | 100% | aws_bedrock | 67% |
 | LLM09 | Overreliance | lakera | 100% | aws_bedrock | 60% |
 | LLM10 | Model Theft | lakera | 20% | nemo | 0% |
@@ -100,15 +100,15 @@ your latency budget.
 
 | Backend | Overall % | Avg Latency | Latency Category | Recommended For |
 |---------|:---------:|:-----------:|:----------------:|-----------------|
-| nemo | 9.0% | 1 ms | Ultra-fast | Real-time inference, high-throughput pipelines |
-| ga_guard | 9.0% | 2 ms | Ultra-fast | Real-time inference, high-throughput pipelines |
-| presidio | 6.4% | 75 ms | Fast | Standard API protection |
-| guardrails_ai | 9.0% | 149 ms | Fast | Standard API protection |
-| lakera | 83.3% | 380 ms | Moderate | Batch processing, async pipelines |
-| azure_prompt_shields | 24.4% | 780 ms | Moderate | Batch processing, async pipelines |
-| aws_bedrock | 59.0% | 914 ms | Moderate | Batch processing, async pipelines |
-| azure_content_safety | 26.9% | 1653 ms | Slow | Offline analysis, compliance audits |
-| openai_moderation | 100.0% | 32690 ms | Slow | Offline analysis, compliance audits |
+| ga_guard | 9.0% | 8 ms | Ultra-fast | Real-time inference, high-throughput pipelines |
+| nemo | 2.6% | 11 ms | Fast | Standard API protection |
+| guardrails_ai | 2.6% | 74 ms | Fast | Standard API protection |
+| presidio | 6.4% | 120 ms | Fast | Standard API protection |
+| lakera | 83.3% | 502 ms | Moderate | Batch processing, async pipelines |
+| aws_bedrock | 59.0% | 780 ms | Moderate | Batch processing, async pipelines |
+| azure_prompt_shields | 24.4% | 1345 ms | Slow | Offline analysis, compliance audits |
+| azure_content_safety | 25.6% | 1787 ms | Slow | Offline analysis, compliance audits |
+| openai_moderation | 100.0% | 33694 ms | Slow | Offline analysis, compliance audits |
 
 Latency categories:
 - Ultra-fast: <10ms   (GA Guard)

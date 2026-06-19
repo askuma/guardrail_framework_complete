@@ -5,6 +5,7 @@ REST API for the Guardrail Framework Abstraction Layer
 
 import logging
 import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
@@ -973,6 +974,11 @@ from guardrail_framework.red_team_runner import (   # noqa: E402
     RedTeamReport as _RedTeamReport,
     ComparisonReport as _ComparisonReport,
 )
+try:
+    import benchmark_report as _benchmark_report_mod  # noqa: E402
+    _BenchmarkRunner = _benchmark_report_mod.BenchmarkRunner
+except ImportError:
+    _BenchmarkRunner = None
 from guardrail_framework.probes import (            # noqa: E402
     ProbeLibrary as _ProbeLibrary,
     AttackCategory as _AttackCategory,
@@ -997,6 +1003,7 @@ class RedTeamRunRequest(_BM):
 class RedTeamCompareRequest(_BM):
     backends: Optional[List[str]] = None
     categories: Optional[List[str]] = None
+    save_benchmark: bool = False
 
 
 class CustomProbeRequest(_BM):
@@ -1110,9 +1117,9 @@ def redteam_run(req: RedTeamRunRequest):
 def redteam_compare(req: RedTeamCompareRequest):
     """Run the same probe set against multiple backends and compare results.
 
-    When ``backends`` is omitted all standard backends (nemo, guardrails_ai,
-    presidio, lakera, ga_guard) are tested.  Backends without a configured
-    SDK or API key fall back to the built-in regex scorer.
+    When ``backends`` is omitted all standard backends are tested.  Set
+    ``save_benchmark`` to ``true`` to persist JSON/MD/PDF artifacts and update
+    the GitHub Pages index (equivalent to running ``benchmark_report.py``).
     """
     raw_backends = (
         req.backends
@@ -1133,7 +1140,29 @@ def redteam_compare(req: RedTeamCompareRequest):
             probes=_probe_library.all_probes(),
             categories=cats,
         )
-        return _comparison_to_dict(comparison)
+        result = _comparison_to_dict(comparison)
+
+        if req.save_benchmark:
+            if _BenchmarkRunner is None:
+                result["benchmark_error"] = "benchmark_report module not available"
+            else:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                try:
+                    reporter = _BenchmarkRunner()
+                    arts = reporter.generate_from_comparison(
+                        comparison, year=now.year, month=now.month
+                    )
+                    stem = f"benchmark_{now.year:04d}_{now.month:02d}"
+                    result["benchmark"] = {
+                        "json_url":     f"benchmarks/{stem}.json",
+                        "markdown_url": f"benchmarks/{stem}.md",
+                        "pdf_url":      f"benchmarks/{stem}.pdf" if arts.pdf_path else None,
+                    }
+                except Exception as exc:
+                    result["benchmark_error"] = str(exc)
+
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1284,3 +1313,31 @@ def redteam_export_report(run_id: str, background_tasks: _BackgroundTasks):
         media_type="application/pdf",
         filename=f"redteam_report_{run_id[:8]}.pdf",
     )
+
+
+# ── Benchmark artifact downloads ───────────────────────────────────────────────
+
+_BENCHMARK_DIR = Path(os.getenv("BENCHMARK_DIR", "/app/docs/benchmarks"))
+_BENCHMARK_MEDIA: dict = {
+    ".json": "application/json",
+    ".md":   "text/markdown",
+    ".pdf":  "application/pdf",
+}
+
+@app.get("/benchmarks/{filename}", tags=["Benchmarks"])
+def download_benchmark_artifact(filename: str):
+    """Download a benchmark artifact (JSON, Markdown, or PDF) by filename.
+
+    Filenames must match the pattern ``benchmark_YYYY_MM.<ext>`` and must
+    exist in the benchmarks output directory.  Path traversal is rejected.
+    """
+    # Reject any path traversal attempt
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = (_BENCHMARK_DIR / filename).resolve()
+    if not str(path).startswith(str(_BENCHMARK_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"{filename} not found")
+    media_type = _BENCHMARK_MEDIA.get(path.suffix, "application/octet-stream")
+    return _FileResponse(str(path), media_type=media_type, filename=filename)

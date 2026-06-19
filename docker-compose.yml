@@ -21,7 +21,8 @@ services:
       - LOG_LEVEL=info
     volumes:
       - guardrail_data:/app/data
-      - ./certs:/app/certs:ro 
+      - ./docs:/app/docs                          # benchmarks + latest_index.json persist on host
+      - ./certs:/app/certs:ro
     dns:
       - 8.8.8.8    # Google — primary
       - 1.1.1.1    # Cloudflare — fallback

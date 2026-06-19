@@ -195,6 +195,31 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
     return backends.map(escapeHtml).join(', ');
   }
 
+  function dlFile(url, name) {
+    fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+      })
+      .then(function (blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 200);
+      })
+      .catch(function (e) { alert('Download failed: ' + e.message); });
+  }
+
+  function dlBtn(url, label) {
+    var name = url.split('/').pop();
+    return '<a href="#" class="btn" onclick="dlFile(\'' +
+      url.replace(/\\/g, '').replace(/'/g, '') + '\',\'' +
+      name.replace(/\\/g, '').replace(/'/g, '') + '\');return false">' +
+      escapeHtml(label) + '</a>';
+  }
+
   function renderLatest(latest) {
     var el = document.getElementById('latest-content');
     if (!latest) {
@@ -221,9 +246,9 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
     }).join('');
 
     var dlButtons = '';
-    if (latest.json_url)     dlButtons += '<a href="' + escapeHtml(latest.json_url) + '" class="btn" download>JSON</a>';
-    if (latest.pdf_url)      dlButtons += '<a href="' + escapeHtml(latest.pdf_url)  + '" class="btn" download>PDF</a>';
-    if (latest.markdown_url) dlButtons += '<a href="' + escapeHtml(latest.markdown_url) + '" class="btn" download>Markdown</a>';
+    if (latest.json_url)     dlButtons += dlBtn(latest.json_url,     'JSON');
+    if (latest.pdf_url)      dlButtons += dlBtn(latest.pdf_url,      'PDF');
+    if (latest.markdown_url) dlButtons += dlBtn(latest.markdown_url, 'Markdown');
 
     el.innerHTML =
       '<div class="card">' +
@@ -245,12 +270,8 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
     }
 
     var rows = archive.slice().reverse().map(function (entry) {
-      var dlPdf = entry.pdf_url
-        ? '<a href="' + escapeHtml(entry.pdf_url) + '" class="btn" download>PDF</a>'
-        : '—';
-      var dlJson = entry.json_url
-        ? '<a href="' + escapeHtml(entry.json_url) + '" class="btn" download>JSON</a>'
-        : '—';
+      var dlPdf  = entry.pdf_url  ? dlBtn(entry.pdf_url,  'PDF')  : '—';
+      var dlJson = entry.json_url ? dlBtn(entry.json_url, 'JSON') : '—';
       var winner = entry.best_overall
         ? escapeHtml(entry.best_overall) + (entry.best_overall_pass_rate != null
             ? ' (' + entry.best_overall_pass_rate.toFixed(1) + '%)'

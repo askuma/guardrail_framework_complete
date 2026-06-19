@@ -923,6 +923,7 @@ function RedTeamTab({ toast }) {
   const [loading,         setLoading]         = useState(false);
   const [report,          setReport]          = useState(null);
   const [compareReport,   setCompareReport]   = useState(null);
+  const [benchmarkArts,   setBenchmarkArts]   = useState(null);
   const [probeFilter,     setProbeFilter]     = useState('all');
   const [expandedProbe,   setExpandedProbe]   = useState(null);
   const [probeMap,        setProbeMap]        = useState({});
@@ -965,14 +966,17 @@ function RedTeamTab({ toast }) {
   };
 
   const runCompare = async () => {
-    setLoading(true); setCompareReport(null);
+    setLoading(true); setCompareReport(null); setBenchmarkArts(null);
     try {
       const r = await api.redteamCompare({
         backends: null,
         categories: selectedCats.length ? selectedCats : null,
+        save_benchmark: true,
       });
       setCompareReport(r);
-      toast(`Comparison complete: ${r.backends_tested.length} backends`, 'ok');
+      if (r.benchmark) setBenchmarkArts(r.benchmark);
+      const saved = r.benchmark ? ' — report saved' : r.benchmark_error ? ' (save failed)' : '';
+      toast(`Comparison complete: ${r.backends_tested.length} backends${saved}`, r.benchmark_error ? 'warn' : 'ok');
     } catch (e) { toast(e.message, 'error'); }
     finally { setLoading(false); }
   };
@@ -1167,6 +1171,27 @@ function RedTeamTab({ toast }) {
               </tbody>
             </table>
           </div>
+        </Card>
+      )}
+
+      {/* ── Benchmark artifacts ── */}
+      {benchmarkArts && (
+        <Card style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Benchmark saved</span>
+          <a href={`/${benchmarkArts.json_url}`} download
+            style={{ fontSize: 12, color: C.blue, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${C.blue}`, borderRadius: 4 }}>
+            ↓ JSON
+          </a>
+          <a href={`/${benchmarkArts.markdown_url}`} download
+            style={{ fontSize: 12, color: C.blue, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${C.blue}`, borderRadius: 4 }}>
+            ↓ Markdown
+          </a>
+          {benchmarkArts.pdf_url && (
+            <a href={`/${benchmarkArts.pdf_url}`} download
+              style={{ fontSize: 12, color: C.blue, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${C.blue}`, borderRadius: 4 }}>
+              ↓ PDF
+            </a>
+          )}
         </Card>
       )}
 

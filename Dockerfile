@@ -42,7 +42,7 @@ RUN pip install --upgrade pip && \
 
 # Install the framework package
 COPY guardrail_framework/ ./guardrail_framework/
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE benchmark_report.py ./
 RUN pip install --no-cache-dir -e .
 
 # Install spaCy + Presidio and download the NLP model for PII detection.
@@ -70,12 +70,12 @@ COPY --from=dashboard-build /dashboard/build ./guardrail_framework/static/
 COPY patch_static.py .
 RUN python patch_static.py
 
-# Create data directory for SQLite database
-RUN mkdir -p /app/data
+# Create persistent data directories
+RUN mkdir -p /app/data /app/docs/benchmarks
 
 # Non-root user
-RUN useradd -m -u 1000 guardrail && chown -R guardrail:guardrail /app /app/tldextract_cache
-RUN chown -R guardrail:guardrail /app/data
+RUN useradd -m -u 1000 guardrail && \
+    chown -R guardrail:guardrail /app /app/tldextract_cache /app/data /app/docs/benchmarks
 
 USER guardrail
 
