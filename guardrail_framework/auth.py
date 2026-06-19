@@ -4,8 +4,15 @@ API key authentication middleware.
 Keys are loaded from the GUARDRAIL_API_KEYS env var (comma-separated).
 Set GUARDRAIL_AUTH_ENABLED=false to disable auth (dev only).
 
+Admin keys (GUARDRAIL_ADMIN_KEYS) are a subset of keys that may call
+destructive write operations: bundle import, policy deletion, rollback,
+and poller management. When GUARDRAIL_ADMIN_KEYS is unset, all regular
+API keys are treated as admin (backward-compatible). Set it explicitly
+to enforce privilege separation.
+
 Example::
     GUARDRAIL_API_KEYS=key1,key2
+    GUARDRAIL_ADMIN_KEYS=key2
     GUARDRAIL_AUTH_ENABLED=true
 """
 
@@ -54,6 +61,21 @@ def load_api_keys() -> Set[str]:
         return {key}
     keys = {k.strip() for k in raw.split(",") if k.strip()}
     logger.info(f"Loaded {len(keys)} API key(s) from environment.")
+    return keys
+
+
+def load_admin_keys(api_keys: Set[str]) -> Set[str]:
+    """Return the set of keys permitted to call admin/destructive endpoints.
+
+    When GUARDRAIL_ADMIN_KEYS is unset, all regular API keys are treated as
+    admin (backward-compatible default). Set it explicitly to enforce privilege
+    separation between read/check callers and policy-management callers.
+    """
+    raw = os.getenv("GUARDRAIL_ADMIN_KEYS", "").strip()
+    if not raw:
+        return set(api_keys)
+    keys = {k.strip() for k in raw.split(",") if k.strip()}
+    logger.info(f"Loaded {len(keys)} admin API key(s) from environment.")
     return keys
 
 

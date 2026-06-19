@@ -169,6 +169,15 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
 
   var INDEX_URL = 'latest_index.json';
 
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   function rateClass(r) {
     if (r >= 80) return 'green';
     if (r >= 50) return 'amber';
@@ -183,7 +192,7 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
 
   function backendBadges(backends) {
     if (!backends || !backends.length) return '—';
-    return backends.join(', ');
+    return backends.map(escapeHtml).join(', ');
   }
 
   function renderLatest(latest) {
@@ -206,19 +215,19 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
 
     var rows = backends.map(function (b) {
       var r = (b in perRates) ? perRates[b] : null;
-      return '<tr><td>' + b +
+      return '<tr><td>' + escapeHtml(b) +
         (b === winner ? ' <span class="badge winner">winner</span>' : '') +
         '</td><td>' + fmtRate(r) + '</td></tr>';
     }).join('');
 
     var dlButtons = '';
-    if (latest.json_url)     dlButtons += '<a href="' + latest.json_url + '" class="btn" download>JSON</a>';
-    if (latest.pdf_url)      dlButtons += '<a href="' + latest.pdf_url  + '" class="btn" download>PDF</a>';
-    if (latest.markdown_url) dlButtons += '<a href="' + latest.markdown_url + '" class="btn" download>Markdown</a>';
+    if (latest.json_url)     dlButtons += '<a href="' + escapeHtml(latest.json_url) + '" class="btn" download>JSON</a>';
+    if (latest.pdf_url)      dlButtons += '<a href="' + escapeHtml(latest.pdf_url)  + '" class="btn" download>PDF</a>';
+    if (latest.markdown_url) dlButtons += '<a href="' + escapeHtml(latest.markdown_url) + '" class="btn" download>Markdown</a>';
 
     el.innerHTML =
       '<div class="card">' +
-        '<h3>' + (latest.month_name || '') + ' ' + (latest.year || '') + '</h3>' +
+        '<h3>' + escapeHtml(latest.month_name || '') + ' ' + escapeHtml(String(latest.year || '')) + '</h3>' +
         '<table>' +
           '<thead><tr><th>Backend</th><th>Overall</th></tr></thead>' +
           '<tbody>' + rows + '</tbody>' +
@@ -237,18 +246,18 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
 
     var rows = archive.slice().reverse().map(function (entry) {
       var dlPdf = entry.pdf_url
-        ? '<a href="' + entry.pdf_url + '" class="btn" download>PDF</a>'
+        ? '<a href="' + escapeHtml(entry.pdf_url) + '" class="btn" download>PDF</a>'
         : '—';
       var dlJson = entry.json_url
-        ? '<a href="' + entry.json_url + '" class="btn" download>JSON</a>'
+        ? '<a href="' + escapeHtml(entry.json_url) + '" class="btn" download>JSON</a>'
         : '—';
       var winner = entry.best_overall
-        ? entry.best_overall + (entry.best_overall_pass_rate != null
+        ? escapeHtml(entry.best_overall) + (entry.best_overall_pass_rate != null
             ? ' (' + entry.best_overall_pass_rate.toFixed(1) + '%)'
             : '')
         : '—';
       return '<tr>' +
-        '<td>' + (entry.month_name || '') + ' ' + (entry.year || '') + '</td>' +
+        '<td>' + escapeHtml(entry.month_name || '') + ' ' + escapeHtml(String(entry.year || '')) + '</td>' +
         '<td>' + winner + '</td>' +
         '<td>' + backendBadges(entry.backends_tested) + '</td>' +
         '<td style="white-space:nowrap">' + dlPdf + ' ' + dlJson + '</td>' +
