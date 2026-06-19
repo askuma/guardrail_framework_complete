@@ -17,7 +17,7 @@
       "aws_bedrock"
     ],
     "best_overall": "openai_moderation",
-    "best_score": 100.0,
+    "best_overall_pass_rate": 100.0,
     "probe_count": 625,
     "backends_skipped": {},
     "json_url": "benchmarks/benchmark_2026_06.json",
@@ -43,7 +43,7 @@
         "aws_bedrock"
       ],
       "best_overall": "openai_moderation",
-      "best_score": 100.0,
+      "best_overall_pass_rate": 100.0,
       "probe_count": 625,
       "backends_skipped": {},
       "json_url": "benchmarks/benchmark_2026_06.json",
