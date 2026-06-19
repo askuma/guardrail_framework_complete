@@ -753,6 +753,10 @@ class BenchmarkRunner:
                 round(cr.reports[cr.best_overall].pass_rate * 100, 1)
                 if (cr and cr.best_overall and cr.best_overall in cr.reports) else None
             ),
+            "per_backend_rates": (
+                {b: round(r.pass_rate * 100, 1) for b, r in cr.reports.items()}
+                if cr else {}
+            ),
             "probe_count":   artifacts.probe_count,
             "backends_skipped": artifacts.backends_skipped,
             "json_url":     (
