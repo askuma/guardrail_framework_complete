@@ -1209,9 +1209,9 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
 
     Calls POST {endpoint}/contentsafety/text:analyze (api-version 2023-10-01)
     and maps Azure severity scores (0–6) to ActionType:
-        0–2  → ALLOW
-        3–4  → ESCALATE
-        5–6  → BLOCK
+        0–1  → ALLOW
+        2–3  → ESCALATE
+        4–6  → BLOCK
 
     Gracefully skips (ALLOW pass-through) when the required env vars are
     absent so the rest of the policy pipeline keeps running.
@@ -1342,10 +1342,14 @@ class AzureContentSafetyBackend(GuardrailBackendInterface):
         action = self._severity_to_action(max_severity)
         flagged = action in (ActionType.ESCALATE, ActionType.BLOCK)
         score = round(max_severity / 6.0, 4)
+        self.logger.debug("Azure CS response: %s", data)
+        self.logger.debug("Azure CS max_severity=%d action=%s", max_severity, action.value)
         return flagged, score, risks, max_severity
 
     def _check_credentials(self) -> bool:
-        return bool(self._endpoint() and self._api_key())
+        endpoint = os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", "").strip()
+        key = os.getenv("AZURE_CONTENT_SAFETY_KEY", "").strip()
+        return bool(endpoint and key)
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         if not self._endpoint() or not self._api_key():
