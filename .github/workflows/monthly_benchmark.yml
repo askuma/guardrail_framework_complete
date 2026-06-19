@@ -16,7 +16,7 @@ name: Monthly Benchmark
 
 on:
   schedule:
-    - cron: "0 6 1 * *"   # 1st of every month at 06:00 UTC
+    - cron: "0 6 1 * *" # 1st of every month at 06:00 UTC
   workflow_dispatch:
     inputs:
       year:
@@ -42,26 +42,26 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      LAKERA_GUARD_API_KEY:              ${{ secrets.LAKERA_GUARD_API_KEY }}
-      GA_GUARD_API_KEY:                  ${{ secrets.GA_GUARD_API_KEY }}
-      GA_GUARD_API_URL:                  ${{ secrets.GA_GUARD_API_URL }}
-      NEMO_ANTHROPIC_API_KEY:            ${{ secrets.NEMO_ANTHROPIC_API_KEY }}
-      OPENAI_API_KEY:                    ${{ secrets.OPENAI_API_KEY }}
-      AZURE_CONTENT_SAFETY_ENDPOINT:     ${{ secrets.AZURE_CONTENT_SAFETY_ENDPOINT }}
-      AZURE_CONTENT_SAFETY_KEY:          ${{ secrets.AZURE_CONTENT_SAFETY_KEY }}
-      AWS_ACCESS_KEY_ID:                 ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY:             ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION:                ${{ secrets.AWS_DEFAULT_REGION }}
-      AWS_BEDROCK_GUARDRAIL_ID:          ${{ secrets.AWS_BEDROCK_GUARDRAIL_ID }}
-      AWS_BEDROCK_GUARDRAIL_VERSION:     ${{ secrets.AWS_BEDROCK_GUARDRAIL_VERSION }}
-      GUARDRAIL_AUTH_ENABLED:            "false"
-      GUARDRAIL_DB_URL:                  "sqlite:///./benchmarks/benchmark.db"
+      LAKERA_GUARD_API_KEY: ${{ secrets.LAKERA_GUARD_API_KEY }}
+      GA_GUARD_API_KEY: ${{ secrets.GA_GUARD_API_KEY }}
+      GA_GUARD_API_URL: ${{ secrets.GA_GUARD_API_URL }}
+      NEMO_ANTHROPIC_API_KEY: ${{ secrets.NEMO_ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AZURE_CONTENT_SAFETY_ENDPOINT: ${{ secrets.AZURE_CONTENT_SAFETY_ENDPOINT }}
+      AZURE_CONTENT_SAFETY_KEY: ${{ secrets.AZURE_CONTENT_SAFETY_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      AWS_BEDROCK_GUARDRAIL_ID: ${{ secrets.AWS_BEDROCK_GUARDRAIL_ID }}
+      AWS_BEDROCK_GUARDRAIL_VERSION: ${{ secrets.AWS_BEDROCK_GUARDRAIL_VERSION }}
+      GUARDRAIL_AUTH_ENABLED: "false"
+      GUARDRAIL_DB_URL: "sqlite:///./benchmarks/benchmark.db"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history needed for prior-month delta
+          fetch-depth: 0 # full history needed for prior-month delta
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -172,3 +172,10 @@ jobs:
               ].join('\n'),
               labels: ['bug', 'automated'],
             });
+      - name: Restore signing certificate
+        run: |
+          mkdir -p certs
+          echo "${{ secrets.SIGNING_KEY_P12_BASE64 }}" | base64 -d > certs/guardrail_signing.p12
+        env:
+          GUARDRAIL_SIGNING_KEY_P12: ./certs/guardrail_signing.p12
+          GUARDRAIL_SIGNING_KEY_PASS: ${{ secrets.SIGNING_KEY_PASS }}
