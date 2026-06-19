@@ -42,7 +42,7 @@ RUN pip install --upgrade pip && \
 
 # Install the framework package
 COPY guardrail_framework/ ./guardrail_framework/
-COPY setup.py .
+COPY pyproject.toml README.md LICENSE ./
 RUN pip install --no-cache-dir -e .
 
 # Install spaCy + Presidio and download the NLP model for PII detection.
@@ -85,4 +85,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
 EXPOSE 8000
 
 CMD ["uvicorn", "guardrail_framework.server:app", \
-     "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
+    "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
