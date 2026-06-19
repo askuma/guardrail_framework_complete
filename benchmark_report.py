@@ -749,7 +749,7 @@ class BenchmarkRunner:
             "generated_at":  datetime.now(timezone.utc).isoformat(),
             "backends_tested": artifacts.backends_tested,
             "best_overall":  cr.best_overall if cr else None,
-            "best_score": (
+            "best_overall_pass_rate": (
                 round(cr.reports[cr.best_overall].pass_rate * 100, 1)
                 if (cr and cr.best_overall and cr.best_overall in cr.reports) else None
             ),
