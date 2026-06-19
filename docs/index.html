@@ -198,16 +198,17 @@ python3 benchmark_report.py --year 2026 --month 6</pre>
     }
 
     var winner = latest.best_overall || '—';
-    var rate   = latest.best_overall_pass_rate;
+    var perRates = latest.per_backend_rates || {};
     var backends = (latest.backends_tested || []);
     var updatedAt = latest.generated_at
       ? new Date(latest.generated_at).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })
       : '—';
 
     var rows = backends.map(function (b) {
+      var r = (b in perRates) ? perRates[b] : null;
       return '<tr><td>' + b +
         (b === winner ? ' <span class="badge winner">winner</span>' : '') +
-        '</td><td>' + fmtRate(b === winner ? rate : null) + '</td></tr>';
+        '</td><td>' + fmtRate(r) + '</td></tr>';
     }).join('');
 
     var dlButtons = '';
