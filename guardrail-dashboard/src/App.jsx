@@ -921,6 +921,7 @@ function RedTeamTab({ toast }) {
   const [selectedCats,    setSelectedCats]    = useState([]);
   const [severity,        setSeverity]        = useState('');
   const [loading,         setLoading]         = useState(false);
+  const [elapsed,         setElapsed]         = useState(0);
   const [report,          setReport]          = useState(null);
   const [compareReport,   setCompareReport]   = useState(null);
   const [benchmarkArts,   setBenchmarkArts]   = useState(null);
@@ -952,6 +953,12 @@ function RedTeamTab({ toast }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!loading) { setElapsed(0); return; }
+    const t = setInterval(() => setElapsed(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [loading]);
+
   const toggleCat = (ref) =>
     setSelectedCats(prev => prev.includes(ref) ? prev.filter(c => c !== ref) : [...prev, ref]);
 
@@ -982,17 +989,18 @@ function RedTeamTab({ toast }) {
       const saved = r.benchmark ? ' — report saved' : r.benchmark_error ? ' (save failed)' : '';
       toast(`Comparison complete: ${r.backends_tested.length} backends${saved}`, r.benchmark_error ? 'warn' : 'ok');
       if (r.run_id) {
-        setRunHistory(prev => {
+        try {
+          const existing = JSON.parse(localStorage.getItem('redteam_run_history') || '[]');
           const entry = {
             run_id:    r.run_id,
             timestamp: r.timestamp || new Date().toISOString(),
             best:      r.best_overall || '—',
             backends:  r.backends_tested?.length ?? 0,
           };
-          const next = [entry, ...prev.filter(e => e.run_id !== r.run_id)].slice(0, 10);
-          try { localStorage.setItem('redteam_run_history', JSON.stringify(next)); } catch {}
-          return next;
-        });
+          const next = [entry, ...existing.filter(e => e.run_id !== r.run_id)].slice(0, 10);
+          localStorage.setItem('redteam_run_history', JSON.stringify(next));
+          setRunHistory(next);
+        } catch {}
       }
     } catch (e) { toast(e.message, 'error'); }
     finally { setLoading(false); }
@@ -1048,7 +1056,99 @@ function RedTeamTab({ toast }) {
   }
 
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
+      {loading && (() => {
+        const BK = [
+          { name: 'NeMo Guardrails',       color: '#22d3ee', dur: 1.7 },
+          { name: 'GuardrailsAI',           color: '#a78bfa', dur: 2.1 },
+          { name: 'Presidio',               color: '#fb923c', dur: 1.9 },
+          { name: 'Lakera Guard',           color: '#4ade80', dur: 2.3 },
+          { name: 'GA Guard',               color: '#f472b6', dur: 1.6 },
+          { name: 'OpenAI Moderation',      color: '#60a5fa', dur: 2.0 },
+          { name: 'Azure Content Safety',   color: '#34d399', dur: 1.8 },
+          { name: 'Azure Prompt Shields',   color: '#fbbf24', dur: 2.4 },
+          { name: 'AWS Bedrock',            color: '#f87171', dur: 1.5 },
+        ];
+        const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const ss = String(elapsed % 60).padStart(2, '0');
+        const nB = backends.length || BK.length;
+        return (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 50,
+            background: 'rgba(10,12,20,0.88)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            borderRadius: 8, minHeight: 300, padding: '32px 24px',
+          }}>
+            <style>{`
+              @keyframes rt-scan { 0%,100%{left:0} 50%{left:calc(100% - 10px)} }
+              @keyframes rt-dot  { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.7)} }
+              @keyframes rt-fade { 0%{opacity:.3} 50%{opacity:1} 100%{opacity:.3} }
+            `}</style>
+
+            {/* Title */}
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', letterSpacing: 0.3, marginBottom: 6 }}>
+              ⚡ Firing probes against {nB} backends in parallel
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 22 }}>
+              78 probes &times; {nB} backends &nbsp;·&nbsp; each backend independent
+            </div>
+
+            {/* Backend rows */}
+            <div style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {BK.map((b, i) => (
+                <div key={b.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {/* pulse dot */}
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: b.color, flexShrink: 0,
+                    boxShadow: `0 0 6px 2px ${b.color}`,
+                    animation: `rt-dot ${b.dur}s ease-in-out infinite`,
+                    animationDelay: `${(i * 0.18).toFixed(2)}s`,
+                  }} />
+                  {/* name */}
+                  <span style={{
+                    width: 170, fontSize: 11, color: 'rgba(255,255,255,0.75)',
+                    fontFamily: 'monospace', flexShrink: 0, letterSpacing: 0.2,
+                  }}>{b.name}</span>
+                  {/* scan track */}
+                  <div style={{
+                    flex: 1, height: 4, background: 'rgba(255,255,255,0.08)',
+                    borderRadius: 4, position: 'relative', overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      position: 'absolute', top: 0, width: 10, height: 4,
+                      borderRadius: 4, background: b.color,
+                      boxShadow: `0 0 10px 3px ${b.color}`,
+                      animation: `rt-scan ${b.dur}s ease-in-out infinite`,
+                      animationDelay: `${(i * 0.18).toFixed(2)}s`,
+                    }} />
+                  </div>
+                  {/* status */}
+                  <span style={{
+                    width: 52, fontSize: 10, color: b.color,
+                    textAlign: 'right', flexShrink: 0,
+                    animation: `rt-fade ${b.dur}s ease-in-out infinite`,
+                    animationDelay: `${(i * 0.18).toFixed(2)}s`,
+                  }}>scanning</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer timer */}
+            <div style={{
+              marginTop: 24, fontSize: 11, color: 'rgba(255,255,255,0.35)',
+              display: 'flex', gap: 16, alignItems: 'center',
+            }}>
+              <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+                ⏱ {mm}:{ss}
+              </span>
+              <span>elapsed &nbsp;·&nbsp; backends may take up to 2 min</span>
+            </div>
+          </div>
+        );
+      })()}
       <SectionHead title="Red Team" />
 
       {/* ── Section 1: Run Controls ── */}
@@ -1103,9 +1203,6 @@ function RedTeamTab({ toast }) {
           <Btn onClick={runCompare} disabled={loading}>
             {loading ? 'Running…' : '⚡ Compare All Backends'}
           </Btn>
-          {loading && (
-            <span style={{ fontSize: 12, color: C.muted }}>Running probes, this may take a moment…</span>
-          )}
         </div>
       </Card>
 
