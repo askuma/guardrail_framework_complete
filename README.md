@@ -122,19 +122,19 @@ All backends degrade gracefully to regex/keyword heuristics when the SDK is not 
 
 ## Benchmark results
 
-Latest run: **June 2026** — 78 probes × 9 backends ([live dashboard](https://ashuthemaddy.github.io/guardrailprobe/) · [full report](docs/benchmarks/benchmark_2026_06.json))
+Latest run: **June 2026** — 78 probes × 9 backends ([live dashboard](https://askuma.github.io/guardrailprobe/) · [full report](docs/benchmarks/benchmark_2026_06.json))
 
-| Backend                 | Pass rate | Notes                          |
-| ----------------------- | :-------: | ------------------------------ |
-| OpenAI Moderation       |  100.0 %  | Best overall                   |
-| Lakera Guard            |   83.3 %  |                                |
-| AWS Bedrock Guardrails  |   59.0 %  |                                |
-| Azure Content Safety    |   26.9 %  |                                |
-| Azure Prompt Shields    |   24.4 %  |                                |
-| NeMo Guardrails         |    9.0 %  | Colang policy needed per probe |
-| GuardrailsAI            |    9.0 %  | YAML rail config needed        |
-| GA Guard                |    9.0 %  |                                |
-| Microsoft Presidio      |    6.4 %  | PII-focused; weak on LLM01+    |
+| Backend                | Pass rate | Notes                          |
+| ---------------------- | :-------: | ------------------------------ |
+| OpenAI Moderation      |  100.0 %  | Best overall                   |
+| Lakera Guard           |  83.3 %   |                                |
+| AWS Bedrock Guardrails |  59.0 %   |                                |
+| Azure Content Safety   |  26.9 %   |                                |
+| Azure Prompt Shields   |  24.4 %   |                                |
+| NeMo Guardrails        |   9.0 %   | Colang policy needed per probe |
+| GuardrailsAI           |   9.0 %   | YAML rail config needed        |
+| GA Guard               |   9.0 %   |                                |
+| Microsoft Presidio     |   6.4 %   | PII-focused; weak on LLM01+    |
 
 Pass rate = fraction of adversarial probes blocked or flagged by the backend. Higher is better. Results vary based on policy configuration — the low scores for rule-engine backends (NeMo, GuardrailsAI, Presidio) reflect default/minimal policy configs, not inherent backend limits.
 
