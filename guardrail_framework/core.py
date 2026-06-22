@@ -442,11 +442,14 @@ rails:
         rails = self._NEMO_RAILS_BLOCK
 
         if os.getenv("OPENAI_API_KEY", "").strip():
+            # Default to gpt-4o-mini; override with NEMO_OPENAI_MODEL for a
+            # different model (e.g. gpt-5-mini for better classification quality).
+            openai_model = os.getenv("NEMO_OPENAI_MODEL", "gpt-4o-mini").strip()
             return f"""
 models:
   - type: main
     engine: openai
-    model: gpt-3.5-turbo
+    model: {openai_model}
 {rails}"""
 
         # OpenRouter — OpenAI-compatible endpoint with free-tier models.

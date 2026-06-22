@@ -40,6 +40,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as _FuturesTimeout
 from dataclasses import dataclass, field
@@ -91,6 +92,10 @@ BACKEND_SCOPE: Dict[str, Dict[str, Any]] = {
         "label": "Prompt Security",
     },
     "ga_guard": {
+        # When GA_GUARD_API_URL is set this is a real external guardrail API
+        # (general-purpose).  Without it the backend runs the local wasm scorer
+        # which is too limited to rank alongside real guardrails — server.py
+        # overrides this to type "specialized" at compare time in that case.
         "type": "general",
         "label": "Content Safety",
     },
@@ -398,11 +403,15 @@ class RedTeamRunner:
         # Specialized tools (Presidio, GuardrailsAI, etc.) and backends that hit
         # quota/rate-limits mid-run are excluded from this ranking so the badge
         # reflects real general security coverage, not an artifact of scope or limits.
+        # GA Guard is also excluded when running without GA_GUARD_API_URL because
+        # it falls back to the local wasm scorer, not a real external guardrail API.
+        ga_guard_wasm_mode = not os.getenv("GA_GUARD_API_URL", "").strip()
         eligible = {
             k: v for k, v in reports.items()
             if v.total_probes > 0
             and v.coverage_pct >= MIN_COVERAGE_PCT
             and BACKEND_SCOPE.get(k, {}).get("type") == "general"
+            and not (k == "ga_guard" and ga_guard_wasm_mode)
         }
         # Fallback: if no general backend met the coverage threshold, rank all
         # non-empty reports so the field is never empty.
