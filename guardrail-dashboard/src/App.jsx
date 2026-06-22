@@ -915,6 +915,21 @@ const RT_OWASP = [
   { ref: 'LLM10', label: 'Model Theft' },
 ];
 
+// Mirrors BACKEND_SCOPE in red_team_runner.py.
+// "general"     → designed to catch broad LLM attacks across all categories.
+// "specialized" → purpose-built for a specific use case (PII, content, etc.).
+const BACKEND_SCOPE = {
+  nemo:                  { type: 'general',     label: 'General LLM Safety' },
+  guardrails_ai:         { type: 'specialized', label: 'Validation Framework',    note: 'Requires validators; compare within PII / content use cases' },
+  presidio:              { type: 'specialized', label: 'PII Detection',            note: 'Designed for PII and credential detection (LLM06) only' },
+  lakera:                { type: 'general',     label: 'Prompt Security' },
+  ga_guard:              { type: 'general',     label: 'Content Safety' },
+  openai_moderation:     { type: 'specialized', label: 'Content Moderation',      note: 'Content policy classification only; subject to rate limits' },
+  azure_content_safety:  { type: 'general',     label: 'Content Safety' },
+  azure_prompt_shields:  { type: 'specialized', label: 'Prompt Injection Guard',  note: 'Designed specifically for prompt injection detection' },
+  aws_bedrock:           { type: 'general',     label: 'General Guardrails' },
+};
+
 function RedTeamTab({ toast }) {
   const [backends,        setBackends]        = useState([]);
   const [selectedBackend, setSelectedBackend] = useState('guardrails_ai');
@@ -1207,99 +1222,157 @@ function RedTeamTab({ toast }) {
       </Card>
 
       {/* ── Section 2: Comparison Table ── */}
-      {compareReport && (
-        <Card style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: 0 }}>Comparison Table</h3>
-            {compareReport.run_id && (
-              <span style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
-                run: {compareReport.run_id.slice(0, 8)}…
-                <button
-                  title="Copy full run ID"
-                  onClick={() => { navigator.clipboard?.writeText(compareReport.run_id); toast('Run ID copied', 'ok'); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.blue, fontSize: 11, padding: '0 2px' }}>
-                  ⎘
-                </button>
-              </span>
-            )}
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <th style={{ textAlign: 'left',   padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Backend</th>
-                  <th style={{ textAlign: 'center', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Overall %</th>
-                  {RT_OWASP.map(({ ref }) => (
-                    <th key={ref} style={{ textAlign: 'center', padding: '8px 6px', color: C.sub, fontWeight: 500, fontSize: 11 }}>{ref}</th>
-                  ))}
-                  <th style={{ textAlign: 'right', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Avg ms</th>
-                </tr>
-              </thead>
-              <tbody>
-                {compareReport.backends_tested.map(backend => {
-                  const skipReason = compareReport.skipped_backends?.[backend];
-                  if (skipReason) {
-                    const badgeLabel = skipReason === 'MISSING_CREDENTIALS' ? 'MISSING CREDENTIALS' : 'PENDING LLM BACKEND';
-                    return (
-                      <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22`, opacity: 0.45 }}>
-                        <td style={{ padding: '10px 12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ color: C.muted, fontWeight: 400 }}>{backend.replace(/_/g, ' ')}</span>
-                            <Badge color={C.muted}>{badgeLabel}</Badge>
-                          </div>
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center', color: C.muted }}>—</td>
-                        {RT_OWASP.map(({ ref }) => (
-                          <td key={ref} style={{ padding: '10px 6px', textAlign: 'center', color: C.muted }}>—</td>
-                        ))}
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: C.muted }}>—</td>
-                      </tr>
-                    );
-                  }
-                  const rep     = compareReport.reports[backend];
-                  const rate    = rep?.pass_rate ?? 0;
-                  const isBest  = backend === compareReport.best_overall;
-                  const isWorst = backend === compareReport.worst_overall && !isBest;
-                  return (
-                    <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22` }}>
-                      <td style={{ padding: '10px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ color: C.text, fontWeight: isBest ? 700 : 400 }}>{backend.replace(/_/g, ' ')}</span>
-                          {isBest  && <Badge color={C.green}>Best</Badge>}
-                          {isWorst && <Badge color={C.red}>Worst</Badge>}
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: passColor(rate) }}>
-                          {(rate * 100).toFixed(0)}%
+      {compareReport && (() => {
+        const scope       = compareReport.backend_scope || BACKEND_SCOPE;
+        const totalProbes = 78; // total probes in the library
+        const generalBackends     = compareReport.backends_tested.filter(b => scope[b]?.type === 'general');
+        const specializedBackends = compareReport.backends_tested.filter(b => scope[b]?.type !== 'general');
+
+        const renderBackendRow = (backend) => {
+          const skipReason = compareReport.skipped_backends?.[backend];
+          if (skipReason) {
+            const badgeLabel = skipReason === 'MISSING_CREDENTIALS' ? 'MISSING CREDENTIALS' : 'PENDING LLM BACKEND';
+            return (
+              <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22`, opacity: 0.45 }}>
+                <td style={{ padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: C.muted, fontWeight: 400 }}>{backend.replace(/_/g, ' ')}</span>
+                    <Badge color={C.muted}>{badgeLabel}</Badge>
+                  </div>
+                </td>
+                <td style={{ padding: '10px 12px', textAlign: 'center', color: C.muted }}>—</td>
+                {RT_OWASP.map(({ ref }) => (
+                  <td key={ref} style={{ padding: '10px 6px', textAlign: 'center', color: C.muted }} title="Category not tested — credentials missing">—</td>
+                ))}
+                <td style={{ padding: '10px 12px', textAlign: 'right', color: C.muted }}>—</td>
+              </tr>
+            );
+          }
+
+          const rep         = compareReport.reports[backend];
+          const rate        = rep?.pass_rate ?? 0;
+          const ran         = rep?.total_probes ?? 0;
+          const covPct      = rep?.coverage_pct ?? Math.round(ran / totalProbes * 100);
+          const isBest      = backend === compareReport.best_overall;
+          const isWorst     = backend === compareReport.worst_overall && !isBest;
+          const scopeMeta   = scope[backend];
+          const isSpecialized = scopeMeta?.type !== 'general';
+          const lowCoverage = covPct < 50;
+
+          return (
+            <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22` }}>
+              <td style={{ padding: '10px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ color: C.text, fontWeight: isBest ? 700 : 400 }}>
+                    {backend.replace(/_/g, ' ')}
+                  </span>
+                  {isBest  && <Badge color={C.green}>Best</Badge>}
+                  {isWorst && <Badge color={C.red}>Worst</Badge>}
+                  {isSpecialized && scopeMeta?.label && (
+                    <span title={scopeMeta.note || scopeMeta.label} style={{
+                      fontSize: 10, padding: '2px 6px', borderRadius: 3,
+                      backgroundColor: C.purple + '22', color: C.purple,
+                      fontWeight: 500, cursor: scopeMeta.note ? 'help' : 'default',
+                    }}>{scopeMeta.label}</span>
+                  )}
+                </div>
+              </td>
+              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: passColor(rate) }}>
+                    {(rate * 100).toFixed(0)}%
+                  </span>
+                  <span
+                    title={`${ran} of ${totalProbes} probes ran${lowCoverage ? ' — low coverage; excluded from Best/Worst ranking' : ''}`}
+                    style={{ fontSize: 10, color: lowCoverage ? C.amber : C.muted, cursor: 'help' }}>
+                    {ran}/{totalProbes} probes{lowCoverage ? ' ⚠' : ''}
+                  </span>
+                </div>
+              </td>
+              {RT_OWASP.map(({ ref }) => {
+                const cell     = pivot[backend]?.[ref];
+                const cr       = cell?.pass_rate;
+                const isWinner = compareReport.category_winners?.[ref] === backend;
+                return (
+                  <td key={ref} style={{ padding: '10px 6px', textAlign: 'center' }}>
+                    {cr != null
+                      ? <span style={{ color: passColor(cr), fontWeight: isWinner ? 700 : 400, fontSize: 12 }}>
+                          {(cr * 100).toFixed(0)}%{isWinner ? ' ★' : ''}
                         </span>
-                      </td>
-                      {RT_OWASP.map(({ ref }) => {
-                        const cell     = pivot[backend]?.[ref];
-                        const cr       = cell?.pass_rate;
-                        const isWinner = compareReport.category_winners?.[ref] === backend;
-                        return (
-                          <td key={ref} style={{ padding: '10px 6px', textAlign: 'center' }}>
-                            {cr != null
-                              ? <span style={{ color: passColor(cr), fontWeight: isWinner ? 700 : 400, fontSize: 12 }}>
-                                  {(cr * 100).toFixed(0)}%{isWinner ? ' ★' : ''}
-                                </span>
-                              : <span style={{ color: C.border }}>—</span>
-                            }
-                          </td>
-                        );
-                      })}
-                      <td style={{ padding: '10px 12px', textAlign: 'right', color: C.sub }}>
-                        {rep?.average_latency_ms?.toFixed(0) ?? '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+                      : <span style={{ color: C.border }} title="Category not tested — quota exhausted or credentials missing">—</span>
+                    }
+                  </td>
+                );
+              })}
+              <td style={{ padding: '10px 12px', textAlign: 'right', color: C.sub }}>
+                {rep?.average_latency_ms?.toFixed(0) ?? '—'}
+              </td>
+            </tr>
+          );
+        };
+
+        const sectionHeader = (label, color = C.sub) => (
+          <tr key={`hdr-${label}`}>
+            <td colSpan={RT_OWASP.length + 3} style={{
+              padding: '8px 12px 4px',
+              fontSize: 11, fontWeight: 600, color,
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+              borderBottom: `1px solid ${C.border}`,
+              background: `${color}0a`,
+            }}>{label}</td>
+          </tr>
+        );
+
+        return (
+          <Card style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: 0 }}>Comparison Table</h3>
+              {compareReport.run_id && (
+                <span style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  run: {compareReport.run_id.slice(0, 8)}…
+                  <button
+                    title="Copy full run ID"
+                    onClick={() => { navigator.clipboard?.writeText(compareReport.run_id); toast('Run ID copied', 'ok'); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.blue, fontSize: 11, padding: '0 2px' }}>
+                    ⎘
+                  </button>
+                </span>
+              )}
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <th style={{ textAlign: 'left',   padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Backend</th>
+                    <th style={{ textAlign: 'center', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Overall %</th>
+                    {RT_OWASP.map(({ ref }) => (
+                      <th key={ref} style={{ textAlign: 'center', padding: '8px 6px', color: C.sub, fontWeight: 500, fontSize: 11 }}>{ref}</th>
+                    ))}
+                    <th style={{ textAlign: 'right', padding: '8px 12px', color: C.sub, fontWeight: 500 }}>Avg ms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {generalBackends.length > 0 && sectionHeader('General Purpose Guardrails', C.blue)}
+                  {generalBackends.map(renderBackendRow)}
+                  {specializedBackends.length > 0 && sectionHeader('Specialized Tools', C.purple)}
+                  {specializedBackends.map(renderBackendRow)}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Legend */}
+            <div style={{ marginTop: 12, padding: '10px 12px', background: `${C.border}22`, borderRadius: 6, fontSize: 11, color: C.muted, lineHeight: 1.7 }}>
+              <strong style={{ color: C.sub }}>Notes</strong>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                <li><span style={{ color: C.border }}>—</span> in a category cell means the backend did not test those probes (quota exhausted or credentials missing).</li>
+                <li>★ marks the category winner (highest pass rate for that OWASP category).</li>
+                <li><span style={{ color: C.amber }}>⚠ n/78 probes</span> — fewer than 50% of probes ran; backend excluded from Best / Worst ranking.</li>
+                <li><span style={{ color: C.purple }}>Specialized Tools</span> are purpose-built for a specific use case (PII detection, content moderation, injection detection) and are not directly comparable to general-purpose guardrails on overall pass rate.</li>
+              </ul>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ── Benchmark artifacts ── */}
       {benchmarkArts && (

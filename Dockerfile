@@ -54,6 +54,19 @@ RUN pip install --no-cache-dir \
     "presidio-anonymizer>=2.2.0" \
     && python -m spacy download en_core_web_lg
 
+# Install GuardrailsAI hub validators so the backend runs real validation
+# instead of the regex-only fallback.
+#
+#   DetectPII     — finds PII in inputs/outputs using presidio (already present)
+#   SecretsPresent — detects API keys / tokens using detect-secrets
+#
+# Both are free validators that require no GUARDRAILS_TOKEN.
+# The || true makes each step non-fatal so a network outage during build does
+# not break the image; the backend falls back to the regex scorer gracefully.
+RUN pip install --no-cache-dir detect-secrets && \
+    guardrails hub install hub://guardrails/detect_pii --quiet 2>/dev/null || true && \
+    guardrails hub install hub://guardrails/secrets_present --quiet 2>/dev/null || true
+
 # Pre-warm the tldextract public-suffix list into a fixed cache directory so
 # the container doesn't need outbound DNS at runtime.  TLDEXTRACT_CACHE_DIR is
 # exported into the image and picked up automatically when Python code calls
@@ -73,6 +86,12 @@ RUN python patch_static.py
 # Create persistent data directories
 RUN mkdir -p /app/data /app/docs/benchmarks
 
+# Entrypoint script — installs premium GuardrailsAI hub validators at container
+# start when GUARDRAILS_TOKEN is set (ToxicLanguage for LLM01 coverage).
+# Must be copied and chmod'd before USER switch so root can write to /app.
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Non-root user
 RUN useradd -m -u 1000 guardrail && \
     chown -R guardrail:guardrail /app /app/tldextract_cache /app/data /app/docs/benchmarks
@@ -84,5 +103,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
 
 EXPOSE 8000
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "guardrail_framework.server:app", \
     "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
