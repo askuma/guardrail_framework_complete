@@ -98,6 +98,15 @@ RUN useradd -m -u 1000 guardrail && \
 
 USER guardrail
 
+# LlamaFirewall and LLM Guard installed as the non-root guardrail user.
+# pip --user writes to ~/.local/lib/python3.11/site-packages/ (no root required).
+# Pre-warm pulls models from HuggingFace; || true keeps the build non-fatal if
+# the network is unavailable at build time.
+ENV PATH="/home/guardrail/.local/bin:${PATH}"
+RUN pip install --user --no-cache-dir "llamafirewall>=0.1.0" "llm-guard>=0.3.13" && \
+    python3 -c "import asyncio; from llamafirewall import LlamaFirewall, UserMessage; asyncio.run(LlamaFirewall().scan(UserMessage(content='test')))" 2>/dev/null || true && \
+    python3 -c "from llm_guard.input_scanners import PromptInjection, Toxicity; PromptInjection(); Toxicity()" 2>/dev/null || true
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 

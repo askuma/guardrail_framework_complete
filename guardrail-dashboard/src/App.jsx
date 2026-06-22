@@ -928,6 +928,8 @@ const BACKEND_SCOPE = {
   azure_content_safety:  { type: 'general',     label: 'Content Safety' },
   azure_prompt_shields:  { type: 'specialized', label: 'Prompt Injection Guard',  note: 'Designed specifically for prompt injection detection' },
   aws_bedrock:           { type: 'general',     label: 'General Guardrails' },
+  llama_firewall:        { type: 'general',     label: 'Prompt Injection Guard' },
+  llm_guard:             { type: 'general',     label: 'Input Safety Scanner' },
 };
 
 function RedTeamTab({ toast }) {

@@ -48,3 +48,6 @@ openai>=1.0.0
 azure-ai-contentsafety>=1.0.0
 # AWS Bedrock Guardrails (set AWS_* vars to activate)
 boto3>=1.28.0
+# Meta LlamaFirewall and LLM Guard are installed as the non-root user in the
+# Docker image (see Dockerfile USER section). For local dev, install manually:
+#   pip install llamafirewall llm-guard

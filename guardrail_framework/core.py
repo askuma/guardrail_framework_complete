@@ -35,6 +35,8 @@ _PRESIDIO_SDK: bool = (
 _presidio_analyzer: Any = None
 _presidio_anonymizer: Any = None
 _BOTO3_SDK: bool = _ilu.find_spec("boto3") is not None
+_LLAMAFIREWALL_SDK: bool = _ilu.find_spec("llamafirewall") is not None
+_LLM_GUARD_SDK: bool = _ilu.find_spec("llm_guard") is not None
 
 if _PRESIDIO_SDK:
     try:
@@ -142,6 +144,8 @@ class GuardrailBackend(str, Enum):
     AZURE_CONTENT_SAFETY  = "azure_content_safety"
     AZURE_PROMPT_SHIELDS  = "azure_prompt_shields"
     AWS_BEDROCK           = "aws_bedrock"
+    LLAMA_FIREWALL        = "llama_firewall"
+    LLM_GUARD             = "llm_guard"
     CUSTOM = "custom"
 
 
@@ -1103,42 +1107,133 @@ class LakeraGuardBackend(GuardrailBackendInterface):
 
 class GAGuardBackend(GuardrailBackendInterface):
     """
-    Generic configurable HTTP guardrail backend (GA Guard).
+    Generic configurable HTTP guardrail backend.
 
-    Sends a POST to GA_GUARD_API_URL with {"text": "...", "context": {...}}
-    and expects a response of {"passed": bool, "risk_score": float, "risks": [...]}.
+    POSTs to any HTTP guardrail API and normalises its response into the
+    framework's standard (passed, risk_score, risks) tuple.  Supports the
+    most common vendor response schemas out of the box (see _normalize_response).
 
-    Falls back to wasm_scorer when GA_GUARD_API_URL is not configured.
+    Required env var
+    ----------------
+    GA_GUARD_API_URL   Full URL of the guardrail endpoint, e.g.
+                       https://my-guardrail.example.com/check
+
+    Optional env vars
+    -----------------
+    GA_GUARD_API_KEY        API key sent in the auth header (default: none)
+    GA_GUARD_AUTH_HEADER    Header name for the key (default: Authorization)
+    GA_GUARD_AUTH_PREFIX    Value prefix, e.g. "Bearer" or "ApiKey" (default: Bearer)
+    GA_GUARD_TEXT_FIELD     JSON body field for the input text (default: text)
+    GA_GUARD_CONTEXT_FIELD  JSON body field for the context dict (default: context)
+    GA_GUARD_TIMEOUT_SECS   Request timeout in seconds (default: 10)
+
+    Supported response schemas (auto-detected, no config needed)
+    ------------------------------------------------------------
+    Native  : {"passed": bool, "risk_score": float, "risks": [...]}
+    Flagged : {"flagged": bool}                     # OpenAI-moderation style
+    Safe    : {"safe": bool}                        # inverse of flagged
+    Blocked : {"blocked": bool, "score": float}
+    Decision: {"decision": "ALLOW"|"BLOCK", "confidence": float}
+    Result  : {"result": "safe"|"unsafe"|"allow"|"block"}
+
+    Falls back to the local wasm scorer only for direct check_input/check_output
+    calls (non-benchmark use).  In benchmark mode the backend shows as
+    MISSING CREDENTIALS when GA_GUARD_API_URL is not set.
     """
+
+    # ── config helpers ────────────────────────────────────────────────────────
 
     def _api_url(self) -> Optional[str]:
         url = self.config.get("api_url") or os.getenv("GA_GUARD_API_URL", "").strip() or None
         if url:
-            _validate_external_url(url)  # raises ValueError on unsafe URLs
+            _validate_external_url(url)
         return url
+
+    def _timeout(self) -> int:
+        return int(
+            self.config.get("timeout_secs")
+            or os.getenv("GA_GUARD_TIMEOUT_SECS", "10")
+        )
+
+    def _auth_headers(self) -> Dict[str, str]:
+        api_key = os.getenv("GA_GUARD_API_KEY", "").strip() or self.config.get("api_key", "")
+        if not api_key:
+            return {}
+        header = os.getenv("GA_GUARD_AUTH_HEADER", "Authorization").strip()
+        prefix = os.getenv("GA_GUARD_AUTH_PREFIX", "Bearer").strip()
+        value = f"{prefix} {api_key}".strip() if prefix else api_key
+        return {header: value}
+
+    # ── response normalisation ────────────────────────────────────────────────
+
+    def _normalize_response(self, data: Dict) -> Tuple[bool, float, List[Dict]]:
+        """Map any common vendor response schema to (passed, score, risks)."""
+        # ── Determine passed ──────────────────────────────────────────────────
+        if "passed" in data:
+            passed = bool(data["passed"])
+        elif "flagged" in data:
+            passed = not bool(data["flagged"])
+        elif "safe" in data:
+            passed = bool(data["safe"])
+        elif "blocked" in data:
+            passed = not bool(data["blocked"])
+        elif "decision" in data:
+            passed = str(data["decision"]).upper() in ("ALLOW", "PASS", "SAFE", "OK", "CLEAN")
+        elif "result" in data:
+            passed = str(data["result"]).lower() in ("safe", "allow", "pass", "ok", "clean")
+        else:
+            # Unknown schema — log and pass through rather than silently blocking.
+            self.logger.warning(
+                "GA Guard response has no recognizable decision field: %s", list(data.keys())
+            )
+            passed = True
+
+        # ── Extract score ─────────────────────────────────────────────────────
+        raw_score = (
+            data.get("risk_score")
+            or data.get("score")
+            or data.get("confidence")
+            or data.get("probability")
+            or data.get("risk")
+        )
+        score = float(raw_score) if raw_score is not None else (0.0 if passed else 0.8)
+
+        # ── Extract risks/categories ──────────────────────────────────────────
+        raw_risks = (
+            data.get("risks")
+            or data.get("details")
+            or data.get("categories")
+            or data.get("violations")
+            or data.get("findings")
+            or []
+        )
+        if isinstance(raw_risks, str):
+            raw_risks = [{"type": "violation", "detail": raw_risks}]
+
+        return passed, score, raw_risks
+
+    # ── API call ──────────────────────────────────────────────────────────────
 
     def _call_api(self, text: str, context: Optional[Dict]) -> Tuple[bool, float, List[Dict]]:
         url = self._api_url()
         if not url:
             raise ValueError("GA Guard API URL not configured. Set GA_GUARD_API_URL.")
 
-        api_key = os.getenv("GA_GUARD_API_KEY", "").strip() or self.config.get("api_key")
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        text_field    = os.getenv("GA_GUARD_TEXT_FIELD",    "text").strip()
+        context_field = os.getenv("GA_GUARD_CONTEXT_FIELD", "context").strip()
 
-        payload = json.dumps({"text": text, "context": context or {}}).encode()
+        headers = {"Content-Type": "application/json", **self._auth_headers()}
+        payload = json.dumps({text_field: text, context_field: context or {}}).encode()
         req = urllib.request.Request(url, data=payload, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
+
+        with urllib.request.urlopen(req, timeout=self._timeout()) as resp:
             data = json.loads(resp.read())
 
-        passed = bool(data.get("passed", True))
-        score = float(data.get("risk_score", 0.0))
-        risks = data.get("risks", [])
-        return passed, score, risks
+        return self._normalize_response(data)
+
+    # ── wasm fallback (non-benchmark direct use only) ─────────────────────────
 
     def _fallback_check(self, text: str, context: Optional[Dict]) -> Tuple[bool, float, List[Dict]]:
-        """Used when no API URL is configured."""
         from .opa_gaps import wasm_scorer
         sensitivity = self.config.get("sensitivity", "medium")
         score, risks = wasm_scorer.score(text, sensitivity)
@@ -1146,7 +1241,12 @@ class GAGuardBackend(GuardrailBackendInterface):
         return score < threshold, score, risks
 
     def _check_credentials(self) -> bool:
-        return True  # local wasm fallback when no API URL is configured
+        # Return False when no API URL is configured so the benchmark runner
+        # records this backend as MISSING_CREDENTIALS instead of running the
+        # wasm fallback and producing misleading comparison results.
+        return bool(self._api_url())
+
+    # ── GuardrailBackendInterface ─────────────────────────────────────────────
 
     def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
         result = GuardrailResult(backend_used=GuardrailBackend.GA_GUARD)
@@ -1155,6 +1255,7 @@ class GAGuardBackend(GuardrailBackendInterface):
             if self._api_url():
                 passed, score, risks = self._call_api(text, context)
             else:
+                # Direct (non-benchmark) call with no URL → local wasm fallback.
                 passed, score, risks = self._fallback_check(text, context)
             result.risk_score = score
             result.passed = passed
@@ -1163,7 +1264,7 @@ class GAGuardBackend(GuardrailBackendInterface):
                 result.action = ActionType.BLOCK
                 result.severity = "critical" if score > 0.8 else "warning"
         except Exception as exc:
-            self.logger.error(f"GA Guard API error: {exc}")
+            self.logger.error("GA Guard API error: %s", exc)
             from .testing import fail_closed_result
             return fail_closed_result(f"GA Guard API error: {exc}")
         result.latency_ms = (time.time() - start) * 1000
@@ -2070,6 +2171,267 @@ class AWSBedrockBackend(GuardrailBackendInterface):
         return {"status": "ok", "backend": GuardrailBackend.AWS_BEDROCK.value}
 
 
+class LlamaFirewallBackend(GuardrailBackendInterface):
+    """
+    Meta LlamaFirewall backend.
+
+    Uses PromptGuard 2 (86M-param model from Meta) to detect prompt injection.
+    Runs locally — no API key required.
+
+    Requires:
+        llamafirewall — pip install llamafirewall
+    """
+
+    def _check_credentials(self) -> bool:
+        return _LLAMAFIREWALL_SDK
+
+    def _scan(self, text: str) -> Tuple[bool, float]:
+        """Returns (flagged, score). Bridges the async firewall.scan() into sync callers."""
+        import asyncio
+        from llamafirewall import LlamaFirewall, UserMessage  # noqa: PLC0415
+
+        async def _run() -> Any:
+            return await LlamaFirewall().scan(UserMessage(content=text))
+
+        try:
+            result = asyncio.run(_run())
+        except RuntimeError:
+            # A running event loop exists (e.g. FastAPI test client) — use a thread.
+            import concurrent.futures  # noqa: PLC0415
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(asyncio.run, _run()).result(timeout=30)
+
+        decision_str = str(getattr(result, "decision", "")).upper()
+        flagged = "BLOCK" in decision_str or "HUMAN_REVIEW" in decision_str
+        score = float(getattr(result, "score", 1.0 if flagged else 0.0))
+        return flagged, score
+
+    def _skipped_result(self, text: str = "",
+                        reason: str = "llamafirewall not installed — run: pip install llamafirewall"
+                        ) -> "GuardrailResult":
+        r = GuardrailResult(backend_used=GuardrailBackend.LLAMA_FIREWALL)
+        r.passed = True
+        r.action = ActionType.SKIPPED
+        r.risk_score = 0.0
+        r.original_text = text
+        r.modified_text = text
+        r.findings = {"skipped": True, "reason": reason}
+        return r
+
+    def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not _LLAMAFIREWALL_SDK:
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.LLAMA_FIREWALL)
+        result.original_text = text
+        start = time.time()
+        try:
+            flagged, score = self._scan(text)
+            result.risk_score = score
+            result.passed = not flagged
+            if flagged:
+                result.action = ActionType.BLOCK
+                result.severity = "high"
+                result.detected_risks.append({
+                    "type": RiskCategory.PROMPT_INJECTION.value,
+                    "source": "llamafirewall",
+                    "score": score,
+                })
+        except Exception as exc:
+            self.logger.error("LlamaFirewall error: %s", exc)
+            from .testing import fail_closed_result  # noqa: PLC0415
+            return fail_closed_result(f"LlamaFirewall error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not _LLAMAFIREWALL_SDK:
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.LLAMA_FIREWALL)
+        result.original_text = text
+        start = time.time()
+        try:
+            flagged, score = self._scan(text)
+            result.risk_score = score
+            result.passed = not flagged
+            if flagged:
+                result.action = ActionType.REDACT
+                result.severity = "high"
+                result.modified_text = "[content blocked by LlamaFirewall]"
+                result.detected_risks.append({
+                    "type": RiskCategory.DATA_LEAKAGE.value,
+                    "source": "llamafirewall",
+                    "score": score,
+                })
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("LlamaFirewall error: %s", exc)
+            from .testing import fail_closed_result  # noqa: PLC0415
+            return fail_closed_result(f"LlamaFirewall error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
+                           _context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.LLAMA_FIREWALL)
+        blocked, reason = self._check_tools(tool_name)
+        if blocked:
+            result.passed = False
+            result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
+            result.detected_risks.append({
+                "type": RiskCategory.MALICIOUS_TOOL_USE.value,
+                "tool": tool_name,
+                "reason": reason,
+            })
+        return result
+
+    def apply_policy(self, _policy: GuardrailPolicy) -> bool:
+        return True
+
+    def health_check(self) -> Dict[str, Any]:
+        if not _LLAMAFIREWALL_SDK:
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.LLAMA_FIREWALL.value,
+                "reason": "llamafirewall not installed — run: pip install llamafirewall",
+            }
+        return {"status": "ok", "backend": GuardrailBackend.LLAMA_FIREWALL.value}
+
+
+# Module-level cached scanners for LLM Guard (model loading is expensive).
+_llm_guard_input_scanners: Optional[List[Any]] = None
+_llm_guard_input_lock = threading.Lock()
+
+
+class LLMGuardBackend(GuardrailBackendInterface):
+    """
+    LLM Guard (Protect AI) backend.
+
+    Runs PromptInjection and Toxicity input scanners locally.
+    No API key required — fully self-hosted.
+
+    Requires:
+        llm-guard — pip install llm-guard
+    """
+
+    def _check_credentials(self) -> bool:
+        return _LLM_GUARD_SDK
+
+    @staticmethod
+    def _get_input_scanners() -> List[Any]:
+        global _llm_guard_input_scanners
+        if _llm_guard_input_scanners is None:
+            with _llm_guard_input_lock:
+                if _llm_guard_input_scanners is None:
+                    from llm_guard.input_scanners import PromptInjection, Toxicity  # noqa: PLC0415
+                    _llm_guard_input_scanners = [PromptInjection(), Toxicity()]
+        return _llm_guard_input_scanners
+
+    def _skipped_result(self, text: str = "",
+                        reason: str = "llm-guard not installed — run: pip install llm-guard"
+                        ) -> "GuardrailResult":
+        r = GuardrailResult(backend_used=GuardrailBackend.LLM_GUARD)
+        r.passed = True
+        r.action = ActionType.SKIPPED
+        r.risk_score = 0.0
+        r.original_text = text
+        r.modified_text = text
+        r.findings = {"skipped": True, "reason": reason}
+        return r
+
+    def check_input(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not _LLM_GUARD_SDK:
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.LLM_GUARD)
+        result.original_text = text
+        start = time.time()
+        try:
+            from llm_guard import scan_prompt  # noqa: PLC0415
+            _, results_valid, results_score = scan_prompt(self._get_input_scanners(), text)
+            flagged = not all(results_valid.values())
+            score = max(results_score.values()) if results_score else 0.0
+            result.risk_score = score
+            result.passed = not flagged
+            if flagged:
+                result.action = ActionType.BLOCK
+                result.severity = "high"
+                result.detected_risks.append({
+                    "type": RiskCategory.PROMPT_INJECTION.value,
+                    "source": "llm_guard",
+                    "score": score,
+                })
+        except Exception as exc:
+            self.logger.error("LLM Guard error: %s", exc)
+            from .testing import fail_closed_result  # noqa: PLC0415
+            return fail_closed_result(f"LLM Guard error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def check_output(self, text: str, context: Optional[Dict] = None) -> GuardrailResult:
+        if not _LLM_GUARD_SDK:
+            return self._skipped_result(text)
+        result = GuardrailResult(backend_used=GuardrailBackend.LLM_GUARD)
+        result.original_text = text
+        start = time.time()
+        try:
+            from llm_guard import scan_output  # noqa: PLC0415
+            from llm_guard.output_scanners import Toxicity as OutputToxicity  # noqa: PLC0415
+            sanitized, results_valid, results_score = scan_output(
+                [OutputToxicity()], text, text
+            )
+            flagged = not all(results_valid.values())
+            score = max(results_score.values()) if results_score else 0.0
+            result.risk_score = score
+            result.passed = not flagged
+            if flagged:
+                result.action = ActionType.REDACT
+                result.severity = "high"
+                result.modified_text = sanitized or "[content blocked by LLM Guard]"
+                result.detected_risks.append({
+                    "type": RiskCategory.DATA_LEAKAGE.value,
+                    "source": "llm_guard",
+                    "score": score,
+                })
+            else:
+                result.modified_text = text
+        except Exception as exc:
+            self.logger.error("LLM Guard error: %s", exc)
+            from .testing import fail_closed_result  # noqa: PLC0415
+            return fail_closed_result(f"LLM Guard error: {exc}")
+        result.latency_ms = (time.time() - start) * 1000
+        return result
+
+    def validate_tool_call(self, tool_name: str, _tool_args: Dict[str, Any],
+                           _context: Optional[Dict] = None) -> GuardrailResult:
+        result = GuardrailResult(backend_used=GuardrailBackend.LLM_GUARD)
+        blocked, reason = self._check_tools(tool_name)
+        if blocked:
+            result.passed = False
+            result.action = ActionType.BLOCK
+            result.risk_score = 0.9
+            result.severity = "critical"
+            result.detected_risks.append({
+                "type": RiskCategory.MALICIOUS_TOOL_USE.value,
+                "tool": tool_name,
+                "reason": reason,
+            })
+        return result
+
+    def apply_policy(self, _policy: GuardrailPolicy) -> bool:
+        return True
+
+    def health_check(self) -> Dict[str, Any]:
+        if not _LLM_GUARD_SDK:
+            return {
+                "status": "skipped",
+                "backend": GuardrailBackend.LLM_GUARD.value,
+                "reason": "llm-guard not installed — run: pip install llm-guard",
+            }
+        return {"status": "ok", "backend": GuardrailBackend.LLM_GUARD.value}
+
+
 # ── Framework orchestrator ─────────────────────────────────────────────────────
 
 class GuardrailFramework:
@@ -2096,6 +2458,8 @@ class GuardrailFramework:
         self.backends[GuardrailBackend.AZURE_CONTENT_SAFETY.value] = AzureContentSafetyBackend({})
         self.backends[GuardrailBackend.AZURE_PROMPT_SHIELDS.value] = AzurePromptShieldsBackend({})
         self.backends[GuardrailBackend.AWS_BEDROCK.value]          = AWSBedrockBackend({})
+        self.backends[GuardrailBackend.LLAMA_FIREWALL.value]       = LlamaFirewallBackend({})
+        self.backends[GuardrailBackend.LLM_GUARD.value]            = LLMGuardBackend({})
 
         any_real_sdk = (
             _NEMO_SDK

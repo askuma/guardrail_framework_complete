@@ -293,7 +293,7 @@ def create_policy(req: CreatePolicyRequest):
 
         policy = UnifiedPolicyBuilder() \
             .with_name(req.name) \
-            .with_description(req.description) \
+            .with_description(req.description or "") \
             .with_backend(backend) \
             .with_risk_categories(risk_cats) \
             .with_sensitivity(req.sensitivity) \
@@ -1070,20 +1070,21 @@ def _report_to_dict(r: _RedTeamReport) -> Dict[str, Any]:
 
 
 def _comparison_to_dict(c: _ComparisonReport) -> Dict[str, Any]:
-    # Build a mutable copy so GA Guard's scope can reflect its runtime mode.
+    # Build a mutable copy so GA Guard's scope label reflects its runtime mode.
     scope = dict(_BACKEND_SCOPE)
-    if not os.getenv("GA_GUARD_API_URL", "").strip():
-        # No external API configured — running local wasm scorer, not a real
-        # guardrail API.  Mark as specialized so it is excluded from Best/Worst
-        # ranking and the UI shows an explanatory badge instead of "Content Safety".
+    if os.getenv("GA_GUARD_API_URL", "").strip():
+        # Real API configured — show the endpoint host as the label.
+        import urllib.parse as _up
+        host = _up.urlparse(os.getenv("GA_GUARD_API_URL", "")).netloc or "Custom API"
+        scope["ga_guard"] = {**scope["ga_guard"], "label": f"Custom API ({host})"}
+    else:
+        # No API URL — _check_credentials() returns False so this backend will
+        # be recorded as MISSING_CREDENTIALS and shown as greyed-out.  The label
+        # is updated here only in case a cached report is displayed.
         scope["ga_guard"] = {
             "type": "specialized",
-            "label": "WASM Local Scorer",
-            "note": (
-                "GA_GUARD_API_URL not set — scores reflect the built-in local "
-                "pattern scorer, not an external guardrail API. "
-                "Set GA_GUARD_API_URL to a custom HTTP endpoint to enable real API mode."
-            ),
+            "label": "Custom HTTP Guardrail",
+            "note": "Set GA_GUARD_API_URL to point at your guardrail API endpoint.",
         }
     return {
         "run_id":            c.run_id,
@@ -1144,7 +1145,16 @@ def redteam_compare(req: RedTeamCompareRequest):
     raw_backends = (
         req.backends
         if req.backends is not None
-        else [b.value for b in GuardrailBackend if b is not GuardrailBackend.CUSTOM]
+        else [
+            b.value for b in GuardrailBackend
+            if b is not GuardrailBackend.CUSTOM
+            # GA Guard is a generic HTTP hook, not a named product.  Only include
+            # it in the default benchmark when a real API endpoint is configured.
+            and not (
+                b is GuardrailBackend.GA_GUARD
+                and not os.getenv("GA_GUARD_API_URL", "").strip()
+            )
+        ]
     )
     try:
         backends = [GuardrailBackend(b) for b in raw_backends]
