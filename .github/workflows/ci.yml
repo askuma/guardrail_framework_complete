@@ -42,7 +42,7 @@ jobs:
           from guardrail_framework.probes import ProbeLibrary, AttackCategory
 
           lib = ProbeLibrary()
-          all_probes = lib.list_probes()
+          all_probes = lib.all_probes()
 
           # Minimum total probe count
           assert len(all_probes) >= 58, (
@@ -51,7 +51,7 @@ jobs:
 
           # Every category must have at least 5 probes
           for cat in AttackCategory:
-              category_probes = lib.list_probes(category=cat)
+              category_probes = lib.get_by_category(cat)
               assert len(category_probes) >= 5, (
                   f"Category {cat.value} has only {len(category_probes)} probes (minimum 5)"
               )

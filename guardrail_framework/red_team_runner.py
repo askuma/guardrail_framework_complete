@@ -62,6 +62,58 @@ from .probes import AttackCategory, AttackProbe, ProbeLibrary
 
 logger = logging.getLogger("RedTeamRunner")
 
+# Minimum % of probes that must have run for a backend to be eligible for
+# Best/Worst labels.  Backends below this threshold ran too few probes
+# (e.g. due to quota exhaustion) to produce a meaningful overall score.
+MIN_COVERAGE_PCT: float = 50.0
+
+# Static backend scope metadata.
+# "type": "general"     — designed to catch broad LLM attack categories.
+# "type": "specialized" — purpose-built for a specific use case or category.
+# Used to gate Best/Worst badges and drive scope annotations in the UI.
+BACKEND_SCOPE: Dict[str, Dict[str, Any]] = {
+    "nemo": {
+        "type": "general",
+        "label": "General LLM Safety",
+    },
+    "guardrails_ai": {
+        "type": "specialized",
+        "label": "Validation Framework",
+        "note": "requires validators; compare within PII/content use cases",
+    },
+    "presidio": {
+        "type": "specialized",
+        "label": "PII Detection",
+        "note": "designed for PII and credential detection (LLM06) only",
+    },
+    "lakera": {
+        "type": "general",
+        "label": "Prompt Security",
+    },
+    "ga_guard": {
+        "type": "general",
+        "label": "Content Safety",
+    },
+    "openai_moderation": {
+        "type": "specialized",
+        "label": "Content Moderation",
+        "note": "content policy classification only; subject to rate limits",
+    },
+    "azure_content_safety": {
+        "type": "general",
+        "label": "Content Safety",
+    },
+    "azure_prompt_shields": {
+        "type": "specialized",
+        "label": "Prompt Injection Guard",
+        "note": "designed specifically for prompt injection detection",
+    },
+    "aws_bedrock": {
+        "type": "general",
+        "label": "General Guardrails",
+    },
+}
+
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
 
@@ -114,6 +166,7 @@ class RedTeamReport:
     probe_results: List[ProbeResult] = field(default_factory=list)
     skipped_count: int = 0  # probes excluded because backend returned SKIPPED
     skipped_backends: Dict[str, str] = field(default_factory=dict)  # backend → reason
+    coverage_pct: float = 0.0  # (total_probes / all attempted) * 100
 
 
 @dataclass
@@ -341,9 +394,19 @@ class RedTeamRunner:
                         GuardrailBackend(bval), active_probes, timestamp, reason=str(exc)
                     )
 
-        # Exclude fully-skipped backends from best/worst ranking.
-        active_reports = {k: v for k, v in reports.items() if v.total_probes > 0}
-        ranked = active_reports if active_reports else reports
+        # Best/Worst: require general-purpose type AND minimum probe coverage.
+        # Specialized tools (Presidio, GuardrailsAI, etc.) and backends that hit
+        # quota/rate-limits mid-run are excluded from this ranking so the badge
+        # reflects real general security coverage, not an artifact of scope or limits.
+        eligible = {
+            k: v for k, v in reports.items()
+            if v.total_probes > 0
+            and v.coverage_pct >= MIN_COVERAGE_PCT
+            and BACKEND_SCOPE.get(k, {}).get("type") == "general"
+        }
+        # Fallback: if no general backend met the coverage threshold, rank all
+        # non-empty reports so the field is never empty.
+        ranked = eligible or {k: v for k, v in reports.items() if v.total_probes > 0} or reports
         best_overall = max(ranked, key=lambda k: ranked[k].pass_rate)
         worst_overall = min(ranked, key=lambda k: ranked[k].pass_rate)
 
@@ -580,6 +643,8 @@ def _build_report(
     n_failed = total - n_passed
     pass_rate = n_passed / total if total else 0.0
     avg_latency = sum(pr.latency_ms for pr in active) / total if total else 0.0
+    total_possible = len(probe_results)  # includes skipped
+    coverage_pct = round(total / total_possible * 100, 1) if total_possible else 0.0
 
     by_category: Dict[str, Dict[str, Any]] = {}
     for pr in active:
@@ -623,6 +688,7 @@ def _build_report(
         probe_results=probe_results,
         skipped_count=n_skipped,
         skipped_backends=skipped_backends or {},
+        coverage_pct=coverage_pct,
     )
 
 

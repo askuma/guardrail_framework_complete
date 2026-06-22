@@ -973,6 +973,7 @@ from guardrail_framework.red_team_runner import (   # noqa: E402
     RedTeamRunner as _RedTeamRunner,
     RedTeamReport as _RedTeamReport,
     ComparisonReport as _ComparisonReport,
+    BACKEND_SCOPE as _BACKEND_SCOPE,
 )
 try:
     import benchmark_report as _benchmark_report_mod  # noqa: E402
@@ -1056,6 +1057,8 @@ def _report_to_dict(r: _RedTeamReport) -> Dict[str, Any]:
         "run_id":              r.run_id,
         "timestamp":           r.timestamp,
         "total_probes":        r.total_probes,
+        "skipped_count":       r.skipped_count,
+        "coverage_pct":        r.coverage_pct,
         "passed":              r.passed,
         "failed":              r.failed,
         "pass_rate":           r.pass_rate,
@@ -1068,14 +1071,16 @@ def _report_to_dict(r: _RedTeamReport) -> Dict[str, Any]:
 
 def _comparison_to_dict(c: _ComparisonReport) -> Dict[str, Any]:
     return {
-        "run_id":           c.run_id,
-        "timestamp":        c.timestamp,
-        "backends_tested":  [b.value for b in c.backends_tested],
-        "reports":          {k: _report_to_dict(r) for k, r in c.reports.items()},
-        "best_overall":     c.best_overall,
-        "worst_overall":    c.worst_overall,
-        "category_winners": c.category_winners,
-        "summary_table":    c.summary_table,
+        "run_id":            c.run_id,
+        "timestamp":         c.timestamp,
+        "backends_tested":   [b.value for b in c.backends_tested],
+        "reports":           {k: _report_to_dict(r) for k, r in c.reports.items()},
+        "best_overall":      c.best_overall,
+        "worst_overall":     c.worst_overall,
+        "category_winners":  c.category_winners,
+        "summary_table":     c.summary_table,
+        "skipped_backends":  c.skipped_backends,
+        "backend_scope":     _BACKEND_SCOPE,
     }
 
 
