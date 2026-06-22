@@ -37,8 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Python deps (cached layer)
 COPY requirements.txt .
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir \
+        "opentelemetry-exporter-otlp-proto-grpc<1.27.0" \
+        "opentelemetry-exporter-otlp-proto-common<1.27.0"
 
 # Install the framework package
 COPY guardrail_framework/ ./guardrail_framework/
@@ -65,16 +68,8 @@ RUN pip install --no-cache-dir \
 # not break the image; the backend falls back to the regex scorer gracefully.
 RUN pip install --no-cache-dir detect-secrets && \
     guardrails hub install hub://guardrails/detect_pii --quiet 2>/dev/null || true && \
-    guardrails hub install hub://guardrails/secrets_present --quiet 2>/dev/null || true
-
-# Pre-warm the tldextract public-suffix list into a fixed cache directory so
-# the container doesn't need outbound DNS at runtime.  TLDEXTRACT_CACHE_DIR is
-# exported into the image and picked up automatically when Python code calls
-# tldextract.  The || true ensures a build-time network failure is non-fatal
-# (tldextract will fall back to its bundled snapshot).
-ENV TLDEXTRACT_CACHE_DIR=/app/tldextract_cache
-RUN mkdir -p /app/tldextract_cache && \
-    python3 -c "import tldextract; tldextract.extract('example.com')" 2>/dev/null || true
+    guardrails hub install hub://guardrails/secrets_present --quiet 2>/dev/null || true && \
+    pip cache purge 2>/dev/null || true
 
 # Copy the compiled React app from stage 1
 COPY --from=dashboard-build /dashboard/build ./guardrail_framework/static/
@@ -86,26 +81,41 @@ RUN python patch_static.py
 # Create persistent data directories
 RUN mkdir -p /app/data /app/docs/benchmarks
 
-# Entrypoint script — installs premium GuardrailsAI hub validators at container
-# start when GUARDRAILS_TOKEN is set (ToxicLanguage for LLM01 coverage).
+# Entrypoint script — configures guardrails hub access when GUARDRAILS_TOKEN is set.
 # Must be copied and chmod'd before USER switch so root can write to /app.
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# Re-pin the entire OTel exporter family after guardrails hub installs.
+# Hub install spawns pip internally and can float proto-http, proto-grpc, and
+# proto-common independently above 1.27.0.  All three must be at the same major
+# version: proto-http>=1.27.0 imports _exporter_metrics from proto-common, but
+# guardrails-ai requires proto-common<1.27.0 (the module lives there).
+# This pin must be the last pip operation so nothing can undo it.
+RUN pip install --no-cache-dir \
+        "opentelemetry-exporter-otlp-proto-http<1.27.0" \
+        "opentelemetry-exporter-otlp-proto-grpc<1.27.0" \
+        "opentelemetry-exporter-otlp-proto-common<1.27.0" && \
+    pip cache purge 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
 # Non-root user
 RUN useradd -m -u 1000 guardrail && \
-    chown -R guardrail:guardrail /app /app/tldextract_cache /app/data /app/docs/benchmarks
+    mkdir -p /app/hf_models && \
+    chown -R guardrail:guardrail /app /app/data /app/docs/benchmarks /app/hf_models
+
+# Append /app/site-packages via a .pth file so Python finds llamafirewall and
+# llm-guard (bind-mounted from the host) WITHOUT letting their bundled copies of
+# shared packages (opentelemetry, grpcio, …) shadow the versions already
+# installed in system site-packages that guardrails-ai depends on.
+# PYTHONPATH prepends (overrides); .pth appends (fallback) — that's what we want.
+RUN echo "/app/site-packages" >> /usr/local/lib/python3.11/site-packages/app_extras.pth
 
 USER guardrail
 
-# LlamaFirewall and LLM Guard installed as the non-root guardrail user.
-# pip --user writes to ~/.local/lib/python3.11/site-packages/ (no root required).
-# Pre-warm pulls models from HuggingFace; || true keeps the build non-fatal if
-# the network is unavailable at build time.
-ENV PATH="/home/guardrail/.local/bin:${PATH}"
-RUN pip install --user --no-cache-dir "llamafirewall>=0.1.0" "llm-guard>=0.3.13" && \
-    python3 -c "import asyncio; from llamafirewall import LlamaFirewall, UserMessage; asyncio.run(LlamaFirewall().scan(UserMessage(content='test')))" 2>/dev/null || true && \
-    python3 -c "from llm_guard.input_scanners import PromptInjection, Toxicity; PromptInjection(); Toxicity()" 2>/dev/null || true
+# HuggingFace model cache — bind-mounted from ./hf_models on the host so
+# models persist across rebuilds and never bloat the image layers.
+ENV HF_HOME=/app/hf_models
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1

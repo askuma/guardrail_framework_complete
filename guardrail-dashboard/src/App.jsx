@@ -8,17 +8,18 @@ import { api } from './api';
 
 // ─── Colour palette ──────────────────────────────────────────────────────────
 const C = {
-  bg:       '#0f172a',
-  card:     '#1e293b',
-  border:   '#334155',
-  muted:    '#64748b',
-  sub:      '#94a3b8',
-  text:     '#f1f5f9',
-  blue:     '#38bdf8',
-  green:    '#10b981',
-  amber:    '#f59e0b',
-  red:      '#ef4444',
-  purple:   '#8b5cf6',
+  bg:       '#f8fafc',
+  card:     '#ffffff',
+  border:   '#e2e8f0',
+  muted:    '#94a3b8',
+  sub:      '#475569',
+  text:     '#0f172a',
+  blue:     '#0284c7',
+  green:    '#059669',
+  amber:    '#d97706',
+  red:      '#dc2626',
+  purple:   '#7c3aed',
+  surface:  '#f1f5f9',
 };
 
 const PIE_COLORS = [C.red, C.amber, C.blue, C.purple, C.green];
@@ -34,6 +35,7 @@ const Badge = ({ children, color = C.green }) => (
 const Card = ({ children, style }) => (
   <div style={{
     backgroundColor: C.card, border: `1px solid ${C.border}`,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
     borderRadius: 8, padding: 20, ...style,
   }}>{children}</div>
 );
@@ -1075,24 +1077,30 @@ function RedTeamTab({ toast }) {
   return (
     <div style={{ position: 'relative' }}>
       {loading && (() => {
+        // Estimated completion time (seconds) per backend — determines when ✓ appears.
         const BK = [
-          { name: 'NeMo Guardrails',       color: '#22d3ee', dur: 1.7 },
-          { name: 'GuardrailsAI',           color: '#a78bfa', dur: 2.1 },
-          { name: 'Presidio',               color: '#fb923c', dur: 1.9 },
-          { name: 'Lakera Guard',           color: '#4ade80', dur: 2.3 },
-          { name: 'GA Guard',               color: '#f472b6', dur: 1.6 },
-          { name: 'OpenAI Moderation',      color: '#60a5fa', dur: 2.0 },
-          { name: 'Azure Content Safety',   color: '#34d399', dur: 1.8 },
-          { name: 'Azure Prompt Shields',   color: '#fbbf24', dur: 2.4 },
-          { name: 'AWS Bedrock',            color: '#f87171', dur: 1.5 },
+          { name: 'NeMo Guardrails',       color: '#22d3ee', eta: 18,  dur: 1.7 },
+          { name: 'GuardrailsAI',           color: '#a78bfa', eta: 28,  dur: 2.1 },
+          { name: 'Presidio',               color: '#fb923c', eta: 12,  dur: 1.9 },
+          { name: 'Lakera Guard',           color: '#4ade80', eta: 35,  dur: 2.3 },
+          { name: 'GA Guard',               color: '#f472b6', eta: 8,   dur: 1.6 },
+          { name: 'OpenAI Moderation',      color: '#60a5fa', eta: 45,  dur: 2.0 },
+          { name: 'Azure Content Safety',   color: '#34d399', eta: 55,  dur: 1.8 },
+          { name: 'Azure Prompt Shields',   color: '#fbbf24', eta: 62,  dur: 2.4 },
+          { name: 'AWS Bedrock',            color: '#f87171', eta: 72,  dur: 1.5 },
+          { name: 'LlamaFirewall',          color: '#fb923c', eta: 85,  dur: 2.2 },
+          { name: 'LLM Guard',              color: '#06b6d4', eta: 98,  dur: 2.0 },
         ];
+        const TOTAL_EST = 115; // expected seconds for full run
+        const progressPct = Math.min(Math.round((elapsed / TOTAL_EST) * 100), 99);
         const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
         const ss = String(elapsed % 60).padStart(2, '0');
         const nB = backends.length || BK.length;
+        const done  = BK.filter(b => elapsed >= b.eta).length;
         return (
           <div style={{
             position: 'absolute', inset: 0, zIndex: 50,
-            background: 'rgba(10,12,20,0.88)',
+            background: 'rgba(10,12,20,0.9)',
             backdropFilter: 'blur(4px)',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
@@ -1105,63 +1113,93 @@ function RedTeamTab({ toast }) {
             `}</style>
 
             {/* Title */}
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', letterSpacing: 0.3, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', letterSpacing: 0.3, marginBottom: 4 }}>
               ⚡ Firing probes against {nB} backends in parallel
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 22 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 16 }}>
               78 probes &times; {nB} backends &nbsp;·&nbsp; each backend independent
             </div>
 
+            {/* Overall progress bar */}
+            <div style={{ width: '100%', maxWidth: 480, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  {done} / {BK.length} backends complete
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#60a5fa' }}>{progressPct}%</span>
+              </div>
+              <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 4,
+                  background: 'linear-gradient(90deg, #38bdf8, #818cf8)',
+                  width: `${progressPct}%`,
+                  transition: 'width 1s linear',
+                }} />
+              </div>
+            </div>
+
             {/* Backend rows */}
-            <div style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {BK.map((b, i) => (
-                <div key={b.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {/* pulse dot */}
-                  <div style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: b.color, flexShrink: 0,
-                    boxShadow: `0 0 6px 2px ${b.color}`,
-                    animation: `rt-dot ${b.dur}s ease-in-out infinite`,
-                    animationDelay: `${(i * 0.18).toFixed(2)}s`,
-                  }} />
-                  {/* name */}
-                  <span style={{
-                    width: 170, fontSize: 11, color: 'rgba(255,255,255,0.75)',
-                    fontFamily: 'monospace', flexShrink: 0, letterSpacing: 0.2,
-                  }}>{b.name}</span>
-                  {/* scan track */}
-                  <div style={{
-                    flex: 1, height: 4, background: 'rgba(255,255,255,0.08)',
-                    borderRadius: 4, position: 'relative', overflow: 'hidden',
-                  }}>
+            <div style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {BK.map((b, i) => {
+                const isDone = elapsed >= b.eta;
+                return (
+                  <div key={b.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* dot / checkmark */}
+                    {isDone ? (
+                      <span style={{ width: 8, fontSize: 12, color: b.color, flexShrink: 0 }}>✓</span>
+                    ) : (
+                      <div style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: b.color, flexShrink: 0,
+                        boxShadow: `0 0 6px 2px ${b.color}`,
+                        animation: `rt-dot ${b.dur}s ease-in-out infinite`,
+                        animationDelay: `${(i * 0.18).toFixed(2)}s`,
+                      }} />
+                    )}
+                    {/* name */}
+                    <span style={{
+                      width: 170, fontSize: 11, flexShrink: 0, letterSpacing: 0.2,
+                      fontFamily: 'monospace',
+                      color: isDone ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.8)',
+                    }}>{b.name}</span>
+                    {/* progress track */}
                     <div style={{
-                      position: 'absolute', top: 0, width: 10, height: 4,
-                      borderRadius: 4, background: b.color,
-                      boxShadow: `0 0 10px 3px ${b.color}`,
-                      animation: `rt-scan ${b.dur}s ease-in-out infinite`,
+                      flex: 1, height: 4, background: 'rgba(255,255,255,0.08)',
+                      borderRadius: 4, position: 'relative', overflow: 'hidden',
+                    }}>
+                      {isDone ? (
+                        <div style={{ height: '100%', width: '100%', background: b.color + '55', borderRadius: 4 }} />
+                      ) : (
+                        <div style={{
+                          position: 'absolute', top: 0, width: 10, height: 4,
+                          borderRadius: 4, background: b.color,
+                          boxShadow: `0 0 10px 3px ${b.color}`,
+                          animation: `rt-scan ${b.dur}s ease-in-out infinite`,
+                          animationDelay: `${(i * 0.18).toFixed(2)}s`,
+                        }} />
+                      )}
+                    </div>
+                    {/* status label */}
+                    <span style={{
+                      width: 52, fontSize: 10, textAlign: 'right', flexShrink: 0,
+                      color: isDone ? 'rgba(255,255,255,0.3)' : b.color,
+                      animation: isDone ? 'none' : `rt-fade ${b.dur}s ease-in-out infinite`,
                       animationDelay: `${(i * 0.18).toFixed(2)}s`,
-                    }} />
+                    }}>{isDone ? 'done' : 'scanning'}</span>
                   </div>
-                  {/* status */}
-                  <span style={{
-                    width: 52, fontSize: 10, color: b.color,
-                    textAlign: 'right', flexShrink: 0,
-                    animation: `rt-fade ${b.dur}s ease-in-out infinite`,
-                    animationDelay: `${(i * 0.18).toFixed(2)}s`,
-                  }}>scanning</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Footer timer */}
             <div style={{
-              marginTop: 24, fontSize: 11, color: 'rgba(255,255,255,0.35)',
+              marginTop: 20, fontSize: 11, color: 'rgba(255,255,255,0.35)',
               display: 'flex', gap: 16, alignItems: 'center',
             }}>
               <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
                 ⏱ {mm}:{ss}
               </span>
-              <span>elapsed &nbsp;·&nbsp; backends may take up to 2 min</span>
+              <span>elapsed &nbsp;·&nbsp; results appear when all backends finish</span>
             </div>
           </div>
         );
@@ -1377,25 +1415,30 @@ function RedTeamTab({ toast }) {
       })()}
 
       {/* ── Benchmark artifacts ── */}
-      {benchmarkArts && (
-        <Card style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Benchmark saved</span>
-          <a href={`/${benchmarkArts.json_url}`} download
-            style={{ fontSize: 12, color: C.blue, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${C.blue}`, borderRadius: 4 }}>
-            ↓ JSON
-          </a>
-          <a href={`/${benchmarkArts.markdown_url}`} download
-            style={{ fontSize: 12, color: C.blue, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${C.blue}`, borderRadius: 4 }}>
-            ↓ Markdown
-          </a>
-          {benchmarkArts.pdf_url && (
-            <a href={`/${benchmarkArts.pdf_url}`} download
-              style={{ fontSize: 12, color: C.blue, textDecoration: 'none', padding: '4px 10px', border: `1px solid ${C.blue}`, borderRadius: 4 }}>
-              ↓ PDF
-            </a>
-          )}
-        </Card>
-      )}
+      {(benchmarkArts || compareReport?.run_id) && (() => {
+        const dlStyle = { fontSize: 12, color: C.blue, textDecoration: 'none', padding: '5px 12px', border: `1px solid ${C.blue}`, borderRadius: 4, fontWeight: 500 };
+        const runId = compareReport?.run_id;
+        return (
+          <Card style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+              {benchmarkArts ? 'Benchmark saved' : 'Downloads'}
+            </span>
+            {benchmarkArts?.json_url && (
+              <a href={`/${benchmarkArts.json_url}`} download style={dlStyle}>↓ JSON</a>
+            )}
+            {benchmarkArts?.markdown_url && (
+              <a href={`/${benchmarkArts.markdown_url}`} download style={dlStyle}>↓ Markdown</a>
+            )}
+            {benchmarkArts?.pdf_url ? (
+              <a href={`/${benchmarkArts.pdf_url}`} download style={dlStyle}>↓ PDF</a>
+            ) : runId && (
+              <a href={`${api.base}/redteam/reports/${runId}/export`}
+                onClick={e => { e.preventDefault(); window.dlFile && window.dlFile(`${api.base}/redteam/reports/${runId}/export`, `report_${runId.slice(0,8)}.pdf`); }}
+                style={dlStyle}>↓ PDF</a>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* ── Run history ── */}
       {runHistory.length > 0 && (

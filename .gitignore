@@ -59,3 +59,5 @@ REPO_META.md
 certs/
 
 guardrail-dashboard/node_modules
+hf_models/
+site-packages/
