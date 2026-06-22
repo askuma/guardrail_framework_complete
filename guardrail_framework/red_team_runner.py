@@ -117,6 +117,14 @@ BACKEND_SCOPE: Dict[str, Dict[str, Any]] = {
         "type": "general",
         "label": "General Guardrails",
     },
+    "llama_firewall": {
+        "type": "general",
+        "label": "Prompt Injection Guard",
+    },
+    "llm_guard": {
+        "type": "general",
+        "label": "Input Safety Scanner",
+    },
 }
 
 

@@ -13,43 +13,30 @@ set -e
 # container triggers a fresh install.
 
 if [ -n "${GUARDRAILS_TOKEN}" ]; then
-    echo "[guardrails] Token detected — configuring account..."
+    echo "[guardrails] Token detected — configuring and installing premium validators..."
 
-    # Try the configure command; show any errors so failures are diagnosable.
-    # --enable-metrics is optional; if the installed version doesn't support it
-    # we fall back to configure without that flag.
-    if guardrails configure --token="${GUARDRAILS_TOKEN}" --enable-metrics false 2>&1; then
-        echo "[guardrails] Account configured"
-    elif guardrails configure --token="${GUARDRAILS_TOKEN}" 2>&1; then
-        echo "[guardrails] Account configured (metrics flag not supported in this version)"
-    else
-        echo "[guardrails] WARN: configure failed — hub install may still work if token is cached"
-    fi
+    # Write config directly instead of using `guardrails configure` — the CLI
+    # --enable-metrics flag syntax has changed across versions and is unreliable.
+    mkdir -p "${HOME}/.guardrails"
+    printf '[DEFAULT]\ntoken = %s\nenable_metrics = False\n' "${GUARDRAILS_TOKEN}" \
+        > "${HOME}/.guardrails/config"
 
-    echo "[guardrails] Installing ToxicLanguage validator (LLM01 coverage)..."
-    if guardrails hub install hub://guardrails/toxic_language 2>&1; then
-        echo "[guardrails] ToxicLanguage installed successfully"
-    else
-        echo "[guardrails] WARN: ToxicLanguage install failed — LLM01 will use regex scorer"
-        echo "[guardrails]   Verify token at https://hub.guardrailsai.com and rebuild the container"
-    fi
+    # PIP_USER=1 directs pip to ~/.local (no root required for the guardrail user).
+    PIP_USER=1 guardrails hub install hub://guardrails/toxic_language --quiet 2>/dev/null \
+        && echo "[guardrails] ToxicLanguage installed (LLM01 coverage)" \
+        || echo "[guardrails] WARN: ToxicLanguage install failed — LLM01 will use regex scorer"
 else
     echo "[guardrails] No GUARDRAILS_TOKEN set — running with free validators only (DetectPII, SecretsPresent)"
 fi
 
-# NeMo Guardrails auto-detects the best available LLM provider for
-# intent classification (first match wins):
-#   OPENAI_API_KEY                                → OpenAI  gpt-3.5-turbo
-#   AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT  → Azure   gpt-4o-mini
-#   OLLAMA_BASE_URL                               → Ollama  llama3 (local, no key)
-#   ANTHROPIC_API_KEY                             → Anthropic claude-haiku (needs LangChain)
-# Without any key, NeMo uses colang pattern-matching only.
-if   [ -n "${OPENAI_API_KEY}" ];        then echo "[nemo] provider: openai"
-elif [ -n "${OPENROUTER_API_KEY}" ];   then echo "[nemo] provider: openrouter (model: ${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free})"
-elif [ -n "${AZURE_OPENAI_API_KEY}" ]; then echo "[nemo] provider: azure"
-elif [ -n "${OLLAMA_BASE_URL}" ];      then echo "[nemo] provider: ollama (local)"
-elif [ -n "${ANTHROPIC_API_KEY}" ];    then echo "[nemo] provider: anthropic (needs langchain)"
-else                                        echo "[nemo] no LLM key — colang pattern-matching only"
+# NeMo Guardrails uses OPENAI_API_KEY for LLM-based intent classification.
+# A default colang policy covering OWASP LLM01 patterns is built into the
+# backend and requires no extra setup.  When OPENAI_API_KEY is set, NeMo
+# classifies subtle injection variants the colang patterns might miss.
+if [ -n "${OPENAI_API_KEY}" ]; then
+    echo "[nemo] OPENAI_API_KEY detected — NeMo will use LLM-based intent classification"
+else
+    echo "[nemo] No OPENAI_API_KEY — NeMo will use colang pattern-matching only"
 fi
 
 exec "$@"

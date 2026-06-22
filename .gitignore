@@ -57,3 +57,5 @@ benchmarks/*.db-wal
 # Repo metadata instructions (set manually on GitHub, then delete)
 REPO_META.md
 certs/
+
+guardrail-dashboard/node_modules
