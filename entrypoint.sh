@@ -45,10 +45,11 @@ fi
 #   ANTHROPIC_API_KEY                             → Anthropic claude-haiku (needs LangChain)
 # Without any key, NeMo uses colang pattern-matching only.
 if   [ -n "${OPENAI_API_KEY}" ];        then echo "[nemo] provider: openai"
-elif [ -n "${AZURE_OPENAI_API_KEY}" ];  then echo "[nemo] provider: azure"
-elif [ -n "${OLLAMA_BASE_URL}" ];       then echo "[nemo] provider: ollama (local)"
-elif [ -n "${ANTHROPIC_API_KEY}" ];     then echo "[nemo] provider: anthropic (needs langchain)"
-else                                         echo "[nemo] no LLM key — colang pattern-matching only"
+elif [ -n "${OPENROUTER_API_KEY}" ];   then echo "[nemo] provider: openrouter (model: ${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free})"
+elif [ -n "${AZURE_OPENAI_API_KEY}" ]; then echo "[nemo] provider: azure"
+elif [ -n "${OLLAMA_BASE_URL}" ];      then echo "[nemo] provider: ollama (local)"
+elif [ -n "${ANTHROPIC_API_KEY}" ];    then echo "[nemo] provider: anthropic (needs langchain)"
+else                                        echo "[nemo] no LLM key — colang pattern-matching only"
 fi
 
 exec "$@"

@@ -432,11 +432,12 @@ rails:
 
         Priority (first key found wins):
           1. OPENAI_API_KEY          → engine: openai   (gpt-3.5-turbo)
-          2. AZURE_OPENAI_API_KEY
+          2. OPENROUTER_API_KEY      → engine: openai   (via openrouter.ai, free tier)
+          3. AZURE_OPENAI_API_KEY
              + AZURE_OPENAI_ENDPOINT → engine: azure    (gpt-4o-mini)
-          3. OLLAMA_BASE_URL         → engine: ollama   (llama3, no key)
-          4. ANTHROPIC_API_KEY       → engine: anthropic via LangChain
-          5. (none)                  → no model block; pattern-matching only
+          4. OLLAMA_BASE_URL         → engine: ollama   (llama3, no key)
+          5. ANTHROPIC_API_KEY       → engine: anthropic via LangChain
+          6. (none)                  → no model block; pattern-matching only
         """
         rails = self._NEMO_RAILS_BLOCK
 
@@ -446,6 +447,22 @@ models:
   - type: main
     engine: openai
     model: gpt-3.5-turbo
+{rails}"""
+
+        # OpenRouter — OpenAI-compatible endpoint with free-tier models.
+        # Default model: meta-llama/llama-3.1-8b-instruct:free (no charges).
+        # Override with OPENROUTER_MODEL to use any other OpenRouter model.
+        or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        or_model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free").strip()
+        if or_key:
+            return f"""
+models:
+  - type: main
+    engine: openai
+    model: {or_model}
+    parameters:
+      openai_api_base: https://openrouter.ai/api/v1
+      openai_api_key: {or_key}
 {rails}"""
 
         az_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
