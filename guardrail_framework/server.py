@@ -1070,6 +1070,21 @@ def _report_to_dict(r: _RedTeamReport) -> Dict[str, Any]:
 
 
 def _comparison_to_dict(c: _ComparisonReport) -> Dict[str, Any]:
+    # Build a mutable copy so GA Guard's scope can reflect its runtime mode.
+    scope = dict(_BACKEND_SCOPE)
+    if not os.getenv("GA_GUARD_API_URL", "").strip():
+        # No external API configured — running local wasm scorer, not a real
+        # guardrail API.  Mark as specialized so it is excluded from Best/Worst
+        # ranking and the UI shows an explanatory badge instead of "Content Safety".
+        scope["ga_guard"] = {
+            "type": "specialized",
+            "label": "WASM Local Scorer",
+            "note": (
+                "GA_GUARD_API_URL not set — scores reflect the built-in local "
+                "pattern scorer, not an external guardrail API. "
+                "Set GA_GUARD_API_URL to a custom HTTP endpoint to enable real API mode."
+            ),
+        }
     return {
         "run_id":            c.run_id,
         "timestamp":         c.timestamp,
@@ -1080,7 +1095,7 @@ def _comparison_to_dict(c: _ComparisonReport) -> Dict[str, Any]:
         "category_winners":  c.category_winners,
         "summary_table":     c.summary_table,
         "skipped_backends":  c.skipped_backends,
-        "backend_scope":     _BACKEND_SCOPE,
+        "backend_scope":     scope,
     }
 
 
