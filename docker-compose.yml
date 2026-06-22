@@ -26,6 +26,11 @@ services:
       - GUARDRAILS_TOKEN=${GUARDRAILS_TOKEN:-}
       # NeMo LLM provider — first non-empty key wins (see .env.example for all options)
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # OpenRouter — free-tier OpenAI-compatible LLM provider.
+      # Get a key at https://openrouter.ai (no credit card required).
+      # Default model: meta-llama/llama-3.1-8b-instruct:free
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
       - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
