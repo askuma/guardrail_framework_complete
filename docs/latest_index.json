@@ -3,8 +3,8 @@
     "year": 2026,
     "month": 6,
     "month_name": "June",
-    "run_id": "469dd45c-6bc9-44ea-aae1-1b1541811244",
-    "generated_at": "2026-06-22T10:10:30.920832+00:00",
+    "run_id": "1061be23-edc0-4f40-8a47-7ab608cf13cc",
+    "generated_at": "2026-06-22T13:48:46.178919+00:00",
     "backends_tested": [
       "nemo",
       "guardrails_ai",
@@ -21,7 +21,7 @@
     "best_overall_pass_rate": 85.9,
     "per_backend_rates": {
       "nemo": 85.9,
-      "guardrails_ai": 2.6,
+      "guardrails_ai": 85.9,
       "presidio": 6.4,
       "lakera": 83.3,
       "openai_moderation": 100.0,
@@ -35,15 +35,15 @@
     "backends_skipped": {},
     "json_url": "benchmarks/benchmark_2026_06.json",
     "markdown_url": "benchmarks/benchmark_2026_06.md",
-    "pdf_url": "benchmarks/benchmark_2026_06.pdf"
+    "pdf_url": null
   },
   "archive": [
     {
       "year": 2026,
       "month": 6,
       "month_name": "June",
-      "run_id": "469dd45c-6bc9-44ea-aae1-1b1541811244",
-      "generated_at": "2026-06-22T10:10:30.920832+00:00",
+      "run_id": "1061be23-edc0-4f40-8a47-7ab608cf13cc",
+      "generated_at": "2026-06-22T13:48:46.178919+00:00",
       "backends_tested": [
         "nemo",
         "guardrails_ai",
@@ -60,7 +60,7 @@
       "best_overall_pass_rate": 85.9,
       "per_backend_rates": {
         "nemo": 85.9,
-        "guardrails_ai": 2.6,
+        "guardrails_ai": 85.9,
         "presidio": 6.4,
         "lakera": 83.3,
         "openai_moderation": 100.0,
@@ -74,7 +74,7 @@
       "backends_skipped": {},
       "json_url": "benchmarks/benchmark_2026_06.json",
       "markdown_url": "benchmarks/benchmark_2026_06.md",
-      "pdf_url": "benchmarks/benchmark_2026_06.pdf"
+      "pdf_url": null
     }
   ]
 }

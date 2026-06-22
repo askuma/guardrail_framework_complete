@@ -13,7 +13,7 @@ set -e
 # container triggers a fresh install.
 
 if [ -n "${GUARDRAILS_TOKEN}" ]; then
-    echo "[guardrails] Token detected — configuring and installing premium validators..."
+    echo "[guardrails] Token detected — configuring guardrails hub access..."
 
     # Write config directly instead of using `guardrails configure` — the CLI
     # --enable-metrics flag syntax has changed across versions and is unreliable.
@@ -21,12 +21,17 @@ if [ -n "${GUARDRAILS_TOKEN}" ]; then
     printf '[DEFAULT]\ntoken = %s\nenable_metrics = False\n' "${GUARDRAILS_TOKEN}" \
         > "${HOME}/.guardrails/config"
 
-    # PIP_USER=1 directs pip to ~/.local (no root required for the guardrail user).
-    PIP_USER=1 guardrails hub install hub://guardrails/toxic_language --quiet 2>/dev/null \
-        && echo "[guardrails] ToxicLanguage installed (LLM01 coverage)" \
-        || echo "[guardrails] WARN: ToxicLanguage install failed — LLM01 will use regex scorer"
+    # Write pip.conf so every pip invocation — including the subprocess that
+    # `guardrails hub install` spawns internally — installs to ~/.local without
+    # needing root.  PIP_USER=1 on its own is not inherited by subprocesses.
+    mkdir -p "${HOME}/.config/pip"
+    printf '[global]\nuser = true\n' > "${HOME}/.config/pip/pip.conf"
+
+    echo "[guardrails] Hub access configured."
+    echo "[guardrails] NOTE: hub://guardrails/toxic_language requires a paid guardrails plan."
+    echo "[guardrails] Toxicity detection is provided by LLM Guard (free, no token required)."
 else
-    echo "[guardrails] No GUARDRAILS_TOKEN set — running with free validators only (DetectPII, SecretsPresent)"
+    echo "[guardrails] No GUARDRAILS_TOKEN set — running with free validators (DetectPII, SecretsPresent, LLM Guard)."
 fi
 
 # NeMo Guardrails uses OPENAI_API_KEY for LLM-based intent classification.

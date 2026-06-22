@@ -41,6 +41,8 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - guardrail_data:/app/data
+      - ./site-packages:/app/site-packages:ro          # llamafirewall + llm-guard (pre-installed on host, avoids Docker build downloads)
+      - ./hf_models:/app/hf_models                  # HuggingFace model cache (LlamaFirewall, LLM Guard)
       - ./docs:/app/docs                          # benchmarks + latest_index.json persist on host
       - ./certs:/app/certs:ro
     dns:
