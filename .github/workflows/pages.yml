@@ -23,6 +23,10 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    # configure-pages, upload-pages-artifact, and deploy-pages currently use
+    # Node 20 internally. Allow Node 20 until those actions publish Node 24 builds.
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
     steps:
       - name: Checkout
@@ -30,6 +34,10 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          # Auto-enable GitHub Pages with GitHub Actions as the source if not
+          # already configured. Requires pages: write + id-token: write permissions.
+          enablement: true
 
       - name: Upload docs/ as Pages artifact
         uses: actions/upload-pages-artifact@v3
