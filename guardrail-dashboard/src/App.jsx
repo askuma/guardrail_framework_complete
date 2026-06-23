@@ -8,19 +8,31 @@ import { api } from './api';
 
 // ─── Colour palette ──────────────────────────────────────────────────────────
 const C = {
+  // Content area (light)
   bg:       '#f8fafc',
   card:     '#ffffff',
   border:   '#e2e8f0',
-  muted:    '#94a3b8',
+  muted:    '#64748b',
   sub:      '#475569',
   text:     '#0f172a',
-  blue:     '#0284c7',
+  blue:     '#3b82f6',
+  blueDk:   '#1d4ed8',
   green:    '#059669',
   amber:    '#d97706',
   red:      '#dc2626',
   purple:   '#7c3aed',
   surface:  '#f1f5f9',
+  // Navigation / header (dark)
+  nav:      '#0f172a',
+  navCard:  '#1e293b',
+  navBdr:   '#334155',
+  navText:  '#f0f4ff',
+  navMuted: '#64748b',
 };
+
+// ─── Typography ───────────────────────────────────────────────────────────────
+const FONT_SANS = "'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif";
+const FONT_MONO = "'Fira Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace";
 
 const PIE_COLORS = [C.red, C.amber, C.blue, C.purple, C.green];
 
@@ -34,63 +46,111 @@ const Badge = ({ children, color = C.green }) => (
 
 const Card = ({ children, style }) => (
   <div style={{
-    backgroundColor: C.card, border: `1px solid ${C.border}`,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    borderRadius: 8, padding: 20, ...style,
+    backgroundColor: C.card,
+    border: `1px solid ${C.border}`,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 6px 24px rgba(0,0,0,0.04)',
+    borderRadius: 10,
+    padding: 20,
+    ...style,
   }}>{children}</div>
 );
 
 const Btn = ({ children, onClick, variant = 'ghost', disabled }) => {
-  const styles = {
-    primary: { backgroundColor: C.blue,   color: C.bg,    border: 'none' },
-    danger:  { backgroundColor: C.red+'22', color: C.red, border: `1px solid ${C.red}` },
-    ghost:   { backgroundColor: 'transparent', color: C.sub, border: `1px solid ${C.border}` },
+  const [hov, setHov] = React.useState(false);
+  const defs = {
+    primary: {
+      base:  { backgroundColor: C.blue, color: '#fff', border: 'none', boxShadow: `0 2px 8px ${C.blue}44` },
+      hover: { backgroundColor: C.blueDk, boxShadow: `0 4px 14px ${C.blue}55` },
+    },
+    danger:  {
+      base:  { backgroundColor: C.red + '14', color: C.red, border: `1px solid ${C.red}55` },
+      hover: { backgroundColor: C.red + '24', borderColor: C.red + '88' },
+    },
+    ghost:   {
+      base:  { backgroundColor: 'transparent', color: C.sub, border: `1px solid ${C.border}` },
+      hover: { backgroundColor: C.surface, borderColor: '#cbd5e1', color: C.text },
+    },
   };
+  const { base, hover } = defs[variant] || defs.ghost;
   return (
-    <button onClick={onClick} disabled={disabled} style={{
-      padding: '6px 14px', borderRadius: 6, fontSize: 13,
-      fontWeight: 500, cursor: disabled ? 'not-allowed' : 'pointer',
-      opacity: disabled ? 0.5 : 1, transition: 'opacity .15s',
-      ...styles[variant],
-    }}>{children}</button>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => !disabled && setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500,
+        fontFamily: FONT_SANS, letterSpacing: '0.01em',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease',
+        ...base,
+        ...(hov && !disabled ? hover : {}),
+      }}
+    >{children}</button>
   );
 };
 
 const Input = ({ label, ...props }) => (
   <label style={{ display: 'block', marginBottom: 12 }}>
-    <span style={{ fontSize: 12, color: C.sub, display: 'block', marginBottom: 4 }}>{label}</span>
+    <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.sub, display: 'block', marginBottom: 5 }}>{label}</span>
     <input {...props} style={{
-      width: '100%', padding: '8px 10px', borderRadius: 6,
+      width: '100%', padding: '9px 12px', borderRadius: 7,
       border: `1px solid ${C.border}`, backgroundColor: C.bg,
-      color: C.text, fontSize: 13, outline: 'none',
-    }} />
+      color: C.text, fontSize: 13, outline: 'none', fontFamily: FONT_SANS,
+      transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+    }}
+    onFocus={e => { e.target.style.borderColor = C.blue; e.target.style.boxShadow = `0 0 0 3px ${C.blue}22`; }}
+    onBlur={e =>  { e.target.style.borderColor = C.border; e.target.style.boxShadow = 'none'; }}
+    />
   </label>
 );
 
 const Select = ({ label, children, ...props }) => (
   <label style={{ display: 'block', marginBottom: 12 }}>
-    <span style={{ fontSize: 12, color: C.sub, display: 'block', marginBottom: 4 }}>{label}</span>
+    <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.sub, display: 'block', marginBottom: 5 }}>{label}</span>
     <select {...props} style={{
-      width: '100%', padding: '8px 10px', borderRadius: 6,
+      width: '100%', padding: '9px 12px', borderRadius: 7,
       border: `1px solid ${C.border}`, backgroundColor: C.bg,
-      color: C.text, fontSize: 13, outline: 'none',
+      color: C.text, fontSize: 13, outline: 'none', fontFamily: FONT_SANS,
+      transition: 'border-color 0.15s ease',
     }}>{children}</select>
   </label>
 );
 
 // ─── Stat card ───────────────────────────────────────────────────────────────
 const StatCard = ({ label, value, sub, color = C.blue }) => (
-  <Card>
-    <p style={{ fontSize: 12, color: C.sub, margin: '0 0 8px' }}>{label}</p>
-    <p style={{ fontSize: 28, fontWeight: 700, color, margin: '0 0 6px' }}>{value ?? '—'}</p>
-    {sub && <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>{sub}</p>}
-  </Card>
+  <div style={{
+    backgroundColor: C.card,
+    border: `1px solid ${C.border}`,
+    borderLeft: `3px solid ${color}`,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 6px 24px rgba(0,0,0,0.04)',
+    borderRadius: 10,
+    padding: '18px 20px',
+    position: 'relative',
+    overflow: 'hidden',
+  }}>
+    <div style={{
+      position: 'absolute', right: 14, top: 14,
+      width: 32, height: 32, borderRadius: 8,
+      backgroundColor: color + '18',
+    }} />
+    <p style={{
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+      color: C.sub, margin: '0 0 10px',
+    }}>{label}</p>
+    <p style={{
+      fontFamily: FONT_MONO, fontSize: 28, fontWeight: 700,
+      color, margin: '0 0 5px', lineHeight: 1,
+    }}>{value ?? '—'}</p>
+    {sub && <p style={{ fontSize: 11, color: C.muted, margin: 0 }}>{sub}</p>}
+  </div>
 );
 
 // ─── Section header ──────────────────────────────────────────────────────────
 const SectionHead = ({ title, action }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-    <h2 style={{ fontSize: 18, fontWeight: 600, color: C.text, margin: 0 }}>{title}</h2>
+    <h2 style={{ fontFamily: FONT_MONO, fontSize: 16, fontWeight: 600, color: C.text, margin: 0, letterSpacing: '-0.01em' }}>{title}</h2>
     {action}
   </div>
 );
@@ -98,15 +158,17 @@ const SectionHead = ({ title, action }) => (
 // ─── Modal shell ─────────────────────────────────────────────────────────────
 const Modal = ({ title, onClose, children }) => (
   <div style={{
-    position: 'fixed', inset: 0, backgroundColor: '#00000099',
+    position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.7)',
+    backdropFilter: 'blur(4px)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
   }}>
     <div style={{
-      backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+      backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
+      boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
       padding: 28, width: 480, maxHeight: '90vh', overflowY: 'auto',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h3 style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>{title}</h3>
+        <h3 style={{ fontFamily: FONT_MONO, color: C.text, fontSize: 16, fontWeight: 600 }}>{title}</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
       {children}
@@ -645,7 +707,7 @@ function AuditTab() {
               ) : entries.slice().reverse().map((e, i) => (
                 <tr key={i} style={{ borderBottom: `1px solid ${C.border}22` }}>
                   <td style={{ padding: '8px 12px', color: C.muted }}>{new Date(e.timestamp).toLocaleTimeString()}</td>
-                  <td style={{ padding: '8px 12px', color: C.sub, fontFamily: 'monospace' }}>{e.policy_id?.slice(0, 8)}…</td>
+                  <td style={{ padding: '8px 12px', color: C.sub, fontFamily: FONT_MONO }}>{e.policy_id?.slice(0, 8)}…</td>
                   <td style={{ padding: '8px 12px', color: C.sub }}>{e.action}</td>
                   <td style={{ padding: '8px 12px' }}>
                     <Badge color={e.passed ? C.green : C.red}>{e.passed ? 'yes' : 'no'}</Badge>
@@ -1159,7 +1221,7 @@ function RedTeamTab({ toast }) {
                     {/* name */}
                     <span style={{
                       width: 170, fontSize: 11, flexShrink: 0, letterSpacing: 0.2,
-                      fontFamily: 'monospace',
+                      fontFamily: FONT_MONO,
                       color: isDone ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.8)',
                     }}>{b.name}</span>
                     {/* progress track */}
@@ -1196,7 +1258,7 @@ function RedTeamTab({ toast }) {
               marginTop: 20, fontSize: 11, color: 'rgba(255,255,255,0.35)',
               display: 'flex', gap: 16, alignItems: 'center',
             }}>
-              <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
                 ⏱ {mm}:{ss}
               </span>
               <span>elapsed &nbsp;·&nbsp; results appear when all backends finish</span>
@@ -1368,7 +1430,7 @@ function RedTeamTab({ toast }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: 0 }}>Comparison Table</h3>
               {compareReport.run_id && (
-                <span style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: C.muted, fontFamily: FONT_MONO, display: 'flex', alignItems: 'center', gap: 6 }}>
                   run: {compareReport.run_id.slice(0, 8)}…
                   <button
                     title="Copy full run ID"
@@ -1456,7 +1518,7 @@ function RedTeamTab({ toast }) {
             <tbody>
               {runHistory.map((h, i) => (
                 <tr key={h.run_id} style={{ borderTop: `1px solid ${C.border}`, background: i === 0 ? C.surface : 'transparent' }}>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', color: C.blue }}>
+                  <td style={{ padding: '4px 8px', fontFamily: FONT_MONO, color: C.blue }}>
                     <span title={h.run_id} style={{ cursor: 'pointer' }}
                       onClick={() => { navigator.clipboard?.writeText(h.run_id); toast('Run ID copied', 'ok'); }}>
                       {h.run_id.slice(0, 8)}…
@@ -1513,12 +1575,12 @@ function RedTeamTab({ toast }) {
                         backgroundColor: expandedProbe === pr.probe_id ? C.bg : 'transparent',
                       }}
                     >
-                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: C.blue, fontSize: 11 }}>{pr.probe_id}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: FONT_MONO, color: C.blue, fontSize: 11 }}>{pr.probe_id}</td>
                       <td style={{ padding: '8px 10px', color: C.sub, fontSize: 11 }}>{owaspLabel(pr.owasp_ref)}</td>
                       <td style={{ padding: '8px 10px' }}>
                         <Badge color={sevColor(pr.severity)}>{pr.severity}</Badge>
                       </td>
-                      <td style={{ padding: '8px 10px', color: C.muted, fontFamily: 'monospace', fontSize: 11 }}>{pr.owasp_ref}</td>
+                      <td style={{ padding: '8px 10px', color: C.muted, fontFamily: FONT_MONO, fontSize: 11 }}>{pr.owasp_ref}</td>
                       <td style={{ padding: '8px 10px', color: C.sub }}>{pr.expected_action}</td>
                       <td style={{ padding: '8px 10px', color: pr.actual_action === pr.expected_action ? C.green : C.red }}>
                         {pr.actual_action}
@@ -1614,7 +1676,7 @@ function RedTeamTab({ toast }) {
 
           <div style={{ padding: '10px 14px', backgroundColor: C.bg, borderRadius: 6, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: C.sub }}>Current run ID:</span>
-            <code style={{ fontSize: 12, color: C.blue, fontFamily: 'monospace', flex: 1 }}>{report.run_id}</code>
+            <code style={{ fontSize: 12, color: C.blue, fontFamily: FONT_MONO, flex: 1 }}>{report.run_id}</code>
             <span style={{ fontSize: 11, color: C.muted }}>({report.passed}/{report.total_probes} passed · {report.backend})</span>
           </div>
 
@@ -1650,7 +1712,7 @@ function RedTeamTab({ toast }) {
                         backgroundColor: (type === 'regression' || type === 'improvement') ? color + '11' : 'transparent',
                         borderRadius: 4, borderLeft: `3px solid ${color}`,
                       }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.blue, minWidth: 100 }}>{pr.probe_id}</span>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.blue, minWidth: 100 }}>{pr.probe_id}</span>
                         <span style={{ fontSize: 11, color: C.muted, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pr.description}</span>
                         <Badge color={color}>{label}</Badge>
                       </div>
@@ -1670,16 +1732,16 @@ function RedTeamTab({ toast }) {
 // ROOT APP
 // ═════════════════════════════════════════════════════════════════════════════
 const TABS = [
-  { id: 'overview',  label: '📊 Overview'  },
-  { id: 'checker',   label: '🧪 Live Test'  },
-  { id: 'policies',  label: '📋 Policies'  },
-  { id: 'testing',   label: '✅ Testing'   },
-  { id: 'status',    label: '💓 Status'    },
-  { id: 'versions',  label: '🗂 Versions'  },
-  { id: 'alerts',    label: '🚨 Alerts'    },
-  { id: 'abtests',   label: '🔀 A/B Tests' },
-  { id: 'audit',     label: '📜 Audit Log' },
-  { id: 'redteam',   label: '🔴 Red Team'  },
+  { id: 'overview',  label: 'Overview'  },
+  { id: 'checker',   label: 'Live Test'  },
+  { id: 'policies',  label: 'Policies'  },
+  { id: 'testing',   label: 'Testing'   },
+  { id: 'status',    label: 'Status'    },
+  { id: 'versions',  label: 'Versions'  },
+  { id: 'alerts',    label: 'Alerts'    },
+  { id: 'abtests',   label: 'A/B Tests' },
+  { id: 'audit',     label: 'Audit Log' },
+  { id: 'redteam',   label: 'Red Team'  },
 ];
 
 export default function App() {
@@ -1746,43 +1808,84 @@ export default function App() {
   }, [loadGlobal]);
 
   return (
-    <div style={{ backgroundColor: C.bg, color: C.text, minHeight: '100vh' }}>
-      {/* Header */}
-      <div style={{ backgroundColor: C.card, borderBottom: `1px solid ${C.border}`, padding: '18px 32px' }}>
+    <div style={{ backgroundColor: C.bg, color: C.text, minHeight: '100vh', fontFamily: FONT_SANS }}>
+      {/* Header — dark premium bar */}
+      <div style={{
+        background: `linear-gradient(135deg, ${C.nav} 0%, #111827 100%)`,
+        borderBottom: `1px solid ${C.navBdr}`,
+        padding: '14px 32px',
+        boxShadow: '0 2px 20px rgba(0,0,0,0.25)',
+      }}>
         <div style={{ maxWidth: 1300, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: C.text }}>🛡️ Guardrail Control Center</h1>
-            <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>Unified AI safety monitoring across all backends</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {/* Logo mark */}
+            <div style={{
+              width: 38, height: 38, borderRadius: 9,
+              background: `linear-gradient(135deg, ${C.blue}, ${C.blueDk})`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              boxShadow: `0 0 18px ${C.blue}55`,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <polyline points="9 12 11 14 15 10"/>
+              </svg>
+            </div>
+            <div>
+              <h1 style={{ fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700, margin: 0, color: C.navText, letterSpacing: '-0.01em' }}>
+                Guardrail Control Center
+              </h1>
+              <p style={{ fontSize: 11, color: C.navMuted, margin: 0, letterSpacing: '0.02em' }}>
+                Unified AI safety monitoring · 11 backends
+              </p>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {lastEvent && (
-              <span style={{ fontSize: 11, color: C.purple, backgroundColor: C.purple + '22', padding: '3px 8px', borderRadius: 4 }}>
+              <span style={{
+                fontSize: 11, color: '#c4b5fd',
+                backgroundColor: 'rgba(167,139,250,0.15)',
+                padding: '3px 10px', borderRadius: 5,
+                border: '1px solid rgba(167,139,250,0.25)',
+                fontFamily: FONT_MONO,
+              }}>
                 ⚡ {lastEvent.type}
               </span>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: health?.status === 'ok' ? C.green : C.red }} />
-              <span style={{ fontSize: 12, color: C.sub }}>{health?.status === 'ok' ? 'API Online' : 'API Offline'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 7, height: 7, borderRadius: '50%',
+                backgroundColor: health?.status === 'ok' ? '#10b981' : '#ef4444',
+                boxShadow: `0 0 7px ${health?.status === 'ok' ? '#10b981' : '#ef4444'}`,
+              }} />
+              <span style={{ fontSize: 12, color: C.navMuted, fontWeight: 500 }}>
+                {health?.status === 'ok' ? 'API Online' : 'API Offline'}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ backgroundColor: C.card, borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 4, padding: '0 32px', overflowX: 'auto' }}>
+      {/* Tab bar — dark, underline active style */}
+      <div style={{
+        backgroundColor: C.navCard,
+        borderBottom: `1px solid ${C.navBdr}`,
+        display: 'flex', gap: 0, padding: '0 32px', overflowX: 'auto',
+      }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            padding: '14px 16px', fontSize: 13, whiteSpace: 'nowrap',
-            color: tab === t.id ? C.blue : C.muted,
+            padding: '11px 16px', fontSize: 12, whiteSpace: 'nowrap',
+            fontFamily: FONT_SANS, fontWeight: tab === t.id ? 600 : 400,
+            color: tab === t.id ? C.navText : C.navMuted,
             borderBottom: tab === t.id ? `2px solid ${C.blue}` : '2px solid transparent',
-            transition: 'color .15s',
+            letterSpacing: '0.01em',
+            transition: 'color 0.15s ease, border-color 0.15s ease',
           }}>{t.label}</button>
         ))}
       </div>
 
       {/* Content */}
-      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '28px 32px' }}>
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '28px 24px' }}>
         {tab === 'overview' && <OverviewTab metrics={metrics} dashboard={dashboard} health={health} />}
         {tab === 'checker'  && <CheckerTab  toast={showToast} />}
         {tab === 'policies' && <PoliciesTab toast={showToast} />}

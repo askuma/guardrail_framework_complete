@@ -46,11 +46,20 @@
     @media (min-width: 640px) { .container { padding: 0 32px; } }
     @media (min-width: 1024px) { .container { padding: 0 48px; } }
 
+    /* ── CSS for nav dark colors ── */
+    :root {
+      --nav:      #0f172a;
+      --nav-bdr:  #1e293b;
+      --nav-text: #f0f4ff;
+      --nav-muted: #64748b;
+    }
+
     /* ── Top header bar ── */
     .topbar {
-      background: var(--card);
-      border-bottom: 1px solid var(--border);
-      padding: 16px 0;
+      background: linear-gradient(135deg, var(--nav) 0%, #111827 100%);
+      border-bottom: 1px solid var(--nav-bdr);
+      padding: 14px 0;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.25);
     }
     .topbar-inner {
       display: flex;
@@ -59,24 +68,30 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+    .topbar-brand { display: flex; align-items: center; gap: 14px; }
+    .topbar-logo {
+      width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--blue-lt), var(--blue));
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 18px rgba(59,130,246,0.45);
+    }
     .topbar h1 {
       font-family: var(--font-mono);
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      color: var(--nav-text);
+      margin: 0;
+      letter-spacing: -0.01em;
     }
-    .topbar h1 svg { flex-shrink: 0; }
-    .topbar .subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; letter-spacing: 0.02em; }
+    .topbar .subtitle { font-size: 11px; color: var(--nav-muted); margin-top: 3px; letter-spacing: 0.02em; }
     .topbar-links { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
     .topbar-links a {
-      font-size: 13px;
-      color: var(--sub);
+      font-size: 12px;
+      color: var(--nav-muted);
       padding: 4px 2px;
       cursor: pointer;
       transition: color 0.15s ease;
+      font-weight: 500;
     }
     .topbar-links a:hover { color: var(--blue-lt); text-decoration: none; }
 
@@ -93,9 +108,21 @@
     .stat-card {
       background: var(--card);
       border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-      border-radius: 8px;
+      border-left: 3px solid var(--accent, var(--blue-lt));
+      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 6px 24px rgba(0,0,0,.04);
+      border-radius: 10px;
       padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      right: 12px; top: 12px;
+      width: 28px; height: 28px;
+      background: var(--accent, var(--blue-lt));
+      opacity: 0.12;
+      border-radius: 7px;
     }
     .stat-card .stat-label  { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sub); margin-bottom: 8px; }
     .stat-card .stat-value  { font-family: var(--font-mono); font-size: 26px; font-weight: 700; margin-bottom: 4px; }
@@ -105,8 +132,8 @@
     .card {
       background: var(--card);
       border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 6px 24px rgba(0,0,0,.04);
+      border-radius: 10px;
       padding: 20px;
       margin-bottom: 20px;
     }
@@ -183,8 +210,8 @@
       padding: 14px 20px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
     }
     .dl-bar .dl-label { font-size: 13px; font-weight: 600; color: var(--text); }
     .dl-btn {
@@ -243,12 +270,14 @@
 <!-- ── Top header bar ── -->
 <div class="topbar">
   <div class="container topbar-inner">
-    <div>
-      <h1>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--blue-lt)"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-        GuardrailProbe
-      </h1>
-      <p class="subtitle">Independent OWASP LLM Top 10 benchmark for AI guardrail backends &middot; Updated monthly</p>
+    <div class="topbar-brand">
+      <div class="topbar-logo" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+      </div>
+      <div>
+        <h1>GuardrailProbe</h1>
+        <p class="subtitle">Independent OWASP LLM Top 10 benchmark &middot; 11 backends &middot; Updated monthly</p>
+      </div>
     </div>
     <div class="topbar-links">
       <a href="https://github.com/askuma/guardrailprobe" target="_blank" rel="noopener">GitHub</a>
@@ -264,10 +293,10 @@
 
   <!-- ── KPI cards ── -->
   <div class="stat-grid" id="kpi-row">
-    <div class="stat-card"><p class="stat-label">Best Overall</p><p class="stat-value" id="kpi-best" style="color:var(--green)">—</p><p class="stat-sub" id="kpi-best-rate">—</p></div>
-    <div class="stat-card"><p class="stat-label">Backends Tested</p><p class="stat-value" id="kpi-backends" style="color:var(--blue)">—</p><p class="stat-sub">this run</p></div>
-    <div class="stat-card"><p class="stat-label">Probes Fired</p><p class="stat-value" id="kpi-probes" style="color:var(--purple)">—</p><p class="stat-sub">OWASP LLM Top 10</p></div>
-    <div class="stat-card"><p class="stat-label">Report Period</p><p class="stat-value" id="kpi-period" style="color:var(--sub); font-size:20px">—</p><p class="stat-sub" id="kpi-updated">—</p></div>
+    <div class="stat-card" style="--accent:var(--green)"><p class="stat-label">Best Overall</p><p class="stat-value" id="kpi-best" style="color:var(--green)">—</p><p class="stat-sub" id="kpi-best-rate">—</p></div>
+    <div class="stat-card" style="--accent:var(--blue-lt)"><p class="stat-label">Backends Tested</p><p class="stat-value" id="kpi-backends" style="color:var(--blue-lt)">—</p><p class="stat-sub">this run</p></div>
+    <div class="stat-card" style="--accent:var(--purple)"><p class="stat-label">Probes Fired</p><p class="stat-value" id="kpi-probes" style="color:var(--purple)">—</p><p class="stat-sub">OWASP LLM Top 10</p></div>
+    <div class="stat-card" style="--accent:var(--amber)"><p class="stat-label">Report Period</p><p class="stat-value" id="kpi-period" style="color:var(--sub); font-size:20px; font-family:var(--font-mono)">—</p><p class="stat-sub" id="kpi-updated">—</p></div>
   </div>
 
   <!-- ── Downloads ── -->
