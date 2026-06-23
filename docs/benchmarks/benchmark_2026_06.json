@@ -1,8 +1,8 @@
 {
   "metadata": {
     "report_title": "GuardrailProbe Benchmark \u2014 June 2026",
-    "generated_at": "2026-06-23T05:00:53.812561+00:00",
-    "run_id": "c7a02099-e0a2-46ae-aa4b-c6b8903139e5",
+    "generated_at": "2026-06-23T10:27:07.287107+00:00",
+    "run_id": "10c6351f-3ea3-49d0-b95d-fbd80841271d",
     "probe_library_version": "0.1.0",
     "guardrailprobe_version": "0.1.0",
     "probe_count": 70,
@@ -23,8 +23,8 @@
     "backends_skipped": {}
   },
   "results": {
-    "run_id": "c7a02099-e0a2-46ae-aa4b-c6b8903139e5",
-    "timestamp": "2026-06-23T04:58:50.719281+00:00",
+    "run_id": "10c6351f-3ea3-49d0-b95d-fbd80841271d",
+    "timestamp": "2026-06-23T10:25:00.108516+00:00",
     "backends_tested": [
       "nemo",
       "guardrails_ai",
@@ -40,16 +40,16 @@
     "best_overall": "nemo",
     "worst_overall": "azure_content_safety",
     "category_winners": {
-      "LLM09": "nemo",
+      "LLM03": "nemo",
       "LLM08": "nemo",
-      "LLM06": "nemo",
+      "LLM02": "nemo",
+      "LLM04": "nemo",
+      "LLM05": "nemo",
+      "LLM09": "nemo",
       "LLM07": "nemo",
       "LLM01": "nemo",
-      "LLM05": "nemo",
-      "LLM03": "nemo",
-      "LLM10": "nemo",
-      "LLM04": "nemo",
-      "LLM02": "nemo"
+      "LLM06": "nemo",
+      "LLM10": "nemo"
     },
     "summary_table": [
       {
@@ -59,7 +59,7 @@
         "passed": 7,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -68,7 +68,7 @@
         "passed": 0,
         "failed": 7,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -77,7 +77,7 @@
         "passed": 7,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -86,7 +86,7 @@
         "passed": 0,
         "failed": 7,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -95,7 +95,7 @@
         "passed": 7,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -104,7 +104,7 @@
         "passed": 7,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -113,7 +113,7 @@
         "passed": 7,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -122,7 +122,7 @@
         "passed": 7,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "openai_moderation",
@@ -131,7 +131,7 @@
         "passed": 1,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 35057.88
+        "average_latency_ms": 46616.82
       },
       {
         "backend": "presidio",
@@ -140,7 +140,7 @@
         "passed": 0,
         "failed": 7,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -149,7 +149,7 @@
         "passed": 16,
         "failed": 5,
         "pass_rate": 0.7619,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -158,7 +158,7 @@
         "passed": 15,
         "failed": 6,
         "pass_rate": 0.7143,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -167,7 +167,7 @@
         "passed": 1,
         "failed": 20,
         "pass_rate": 0.0476,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -176,7 +176,7 @@
         "passed": 1,
         "failed": 20,
         "pass_rate": 0.0476,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -185,7 +185,7 @@
         "passed": 17,
         "failed": 4,
         "pass_rate": 0.8095,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -194,7 +194,7 @@
         "passed": 17,
         "failed": 4,
         "pass_rate": 0.8095,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -203,7 +203,7 @@
         "passed": 17,
         "failed": 4,
         "pass_rate": 0.8095,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -212,7 +212,7 @@
         "passed": 17,
         "failed": 4,
         "pass_rate": 0.8095,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -221,7 +221,7 @@
         "passed": 4,
         "failed": 17,
         "pass_rate": 0.1905,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -230,7 +230,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -239,7 +239,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -248,7 +248,7 @@
         "passed": 3,
         "failed": 2,
         "pass_rate": 0.6,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -257,7 +257,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -266,7 +266,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -275,7 +275,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -284,7 +284,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -293,7 +293,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -302,7 +302,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -311,7 +311,7 @@
         "passed": 2,
         "failed": 4,
         "pass_rate": 0.3333,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -320,7 +320,7 @@
         "passed": 1,
         "failed": 5,
         "pass_rate": 0.1667,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -329,7 +329,7 @@
         "passed": 1,
         "failed": 5,
         "pass_rate": 0.1667,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -338,7 +338,7 @@
         "passed": 0,
         "failed": 6,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -347,7 +347,7 @@
         "passed": 4,
         "failed": 2,
         "pass_rate": 0.6667,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -356,7 +356,7 @@
         "passed": 4,
         "failed": 2,
         "pass_rate": 0.6667,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -365,7 +365,7 @@
         "passed": 4,
         "failed": 2,
         "pass_rate": 0.6667,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -374,7 +374,7 @@
         "passed": 4,
         "failed": 2,
         "pass_rate": 0.6667,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -383,7 +383,7 @@
         "passed": 0,
         "failed": 6,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -392,7 +392,7 @@
         "passed": 1,
         "failed": 4,
         "pass_rate": 0.2,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -401,7 +401,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -410,7 +410,7 @@
         "passed": 2,
         "failed": 3,
         "pass_rate": 0.4,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -419,7 +419,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -428,7 +428,7 @@
         "passed": 4,
         "failed": 1,
         "pass_rate": 0.8,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -437,7 +437,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -446,7 +446,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -455,7 +455,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -464,7 +464,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -473,7 +473,7 @@
         "passed": 6,
         "failed": 6,
         "pass_rate": 0.5,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -482,7 +482,7 @@
         "passed": 4,
         "failed": 8,
         "pass_rate": 0.3333,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -491,7 +491,7 @@
         "passed": 1,
         "failed": 11,
         "pass_rate": 0.0833,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -500,7 +500,7 @@
         "passed": 0,
         "failed": 12,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -509,7 +509,7 @@
         "passed": 12,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -518,7 +518,7 @@
         "passed": 12,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -527,7 +527,7 @@
         "passed": 12,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -536,7 +536,7 @@
         "passed": 12,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -545,7 +545,7 @@
         "passed": 0,
         "failed": 12,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -554,7 +554,7 @@
         "passed": 2,
         "failed": 4,
         "pass_rate": 0.3333,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -563,7 +563,7 @@
         "passed": 0,
         "failed": 6,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -572,7 +572,7 @@
         "passed": 1,
         "failed": 5,
         "pass_rate": 0.1667,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -581,7 +581,7 @@
         "passed": 1,
         "failed": 5,
         "pass_rate": 0.1667,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -590,7 +590,7 @@
         "passed": 4,
         "failed": 2,
         "pass_rate": 0.6667,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -599,7 +599,7 @@
         "passed": 5,
         "failed": 1,
         "pass_rate": 0.8333,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -608,7 +608,7 @@
         "passed": 5,
         "failed": 1,
         "pass_rate": 0.8333,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -617,7 +617,7 @@
         "passed": 5,
         "failed": 1,
         "pass_rate": 0.8333,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -626,7 +626,7 @@
         "passed": 1,
         "failed": 5,
         "pass_rate": 0.1667,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -635,7 +635,7 @@
         "passed": 4,
         "failed": 2,
         "pass_rate": 0.6667,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -644,7 +644,7 @@
         "passed": 0,
         "failed": 6,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -653,7 +653,7 @@
         "passed": 3,
         "failed": 3,
         "pass_rate": 0.5,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -662,7 +662,7 @@
         "passed": 0,
         "failed": 6,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -671,7 +671,7 @@
         "passed": 6,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -680,7 +680,7 @@
         "passed": 6,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -689,7 +689,7 @@
         "passed": 6,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -698,7 +698,7 @@
         "passed": 6,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -707,7 +707,7 @@
         "passed": 0,
         "failed": 6,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -716,7 +716,7 @@
         "passed": 3,
         "failed": 2,
         "pass_rate": 0.6,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -725,7 +725,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -734,7 +734,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -743,7 +743,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -752,7 +752,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -761,7 +761,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -770,7 +770,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -779,7 +779,7 @@
         "passed": 5,
         "failed": 0,
         "pass_rate": 1.0,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -788,7 +788,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       },
       {
         "backend": "aws_bedrock",
@@ -797,7 +797,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 919.81
+        "average_latency_ms": 1153.98
       },
       {
         "backend": "azure_content_safety",
@@ -806,7 +806,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1123.63
+        "average_latency_ms": 1629.96
       },
       {
         "backend": "azure_prompt_shields",
@@ -815,7 +815,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1426.66
+        "average_latency_ms": 1335.51
       },
       {
         "backend": "guardrails_ai",
@@ -824,7 +824,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 182.69
+        "average_latency_ms": 512.3
       },
       {
         "backend": "lakera",
@@ -833,7 +833,7 @@
         "passed": 1,
         "failed": 4,
         "pass_rate": 0.2,
-        "average_latency_ms": 543.33
+        "average_latency_ms": 759.62
       },
       {
         "backend": "llama_firewall",
@@ -842,7 +842,7 @@
         "passed": 1,
         "failed": 4,
         "pass_rate": 0.2,
-        "average_latency_ms": 78.77
+        "average_latency_ms": 48.85
       },
       {
         "backend": "llm_guard",
@@ -851,7 +851,7 @@
         "passed": 1,
         "failed": 4,
         "pass_rate": 0.2,
-        "average_latency_ms": 351.01
+        "average_latency_ms": 112.36
       },
       {
         "backend": "nemo",
@@ -860,7 +860,7 @@
         "passed": 1,
         "failed": 4,
         "pass_rate": 0.2,
-        "average_latency_ms": 1504.59
+        "average_latency_ms": 770.93
       },
       {
         "backend": "presidio",
@@ -869,7 +869,7 @@
         "passed": 0,
         "failed": 5,
         "pass_rate": 0.0,
-        "average_latency_ms": 1577.94
+        "average_latency_ms": 216.69
       }
     ],
     "backend_summaries": {
@@ -878,7 +878,7 @@
         "passed": 67,
         "failed": 11,
         "total_probes": 78,
-        "average_latency_ms": 1504.59,
+        "average_latency_ms": 770.93,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -967,7 +967,7 @@
         "passed": 2,
         "failed": 76,
         "total_probes": 78,
-        "average_latency_ms": 182.69,
+        "average_latency_ms": 512.3,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1056,7 +1056,7 @@
         "passed": 5,
         "failed": 73,
         "total_probes": 78,
-        "average_latency_ms": 1577.94,
+        "average_latency_ms": 216.69,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1145,7 +1145,7 @@
         "passed": 65,
         "failed": 13,
         "total_probes": 78,
-        "average_latency_ms": 543.33,
+        "average_latency_ms": 759.62,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1234,7 +1234,7 @@
         "passed": 1,
         "failed": 0,
         "total_probes": 1,
-        "average_latency_ms": 35057.88,
+        "average_latency_ms": 46616.82,
         "results_by_category": {
           "LLM01": {
             "total": 1,
@@ -1257,7 +1257,7 @@
         "passed": 20,
         "failed": 58,
         "total_probes": 78,
-        "average_latency_ms": 1123.63,
+        "average_latency_ms": 1629.96,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1346,7 +1346,7 @@
         "passed": 19,
         "failed": 59,
         "total_probes": 78,
-        "average_latency_ms": 1426.66,
+        "average_latency_ms": 1335.51,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1435,7 +1435,7 @@
         "passed": 46,
         "failed": 32,
         "total_probes": 78,
-        "average_latency_ms": 919.81,
+        "average_latency_ms": 1153.98,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1524,7 +1524,7 @@
         "passed": 67,
         "failed": 11,
         "total_probes": 78,
-        "average_latency_ms": 78.77,
+        "average_latency_ms": 48.85,
         "results_by_category": {
           "LLM01": {
             "total": 7,
@@ -1613,7 +1613,7 @@
         "passed": 67,
         "failed": 11,
         "total_probes": 78,
-        "average_latency_ms": 351.01,
+        "average_latency_ms": 112.36,
         "results_by_category": {
           "LLM01": {
             "total": 7,
