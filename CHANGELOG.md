@@ -14,11 +14,11 @@ All notable changes are documented here. Dates use ISO 8601 (YYYY-MM-DD).
 - Both backends participate in the Red Team comparison table and are included in the June 2026 benchmark (85.9 % pass rate each)
 
 **Compiler** (`compiler.py`)
-- Registered all 11 backends in the `PolicyCompiler` dispatch table
+- Registered all 10 vendor backends + generic HTTP adapter in the `PolicyCompiler` dispatch table
 - Added `_compile_generic` fallback: unknown / `CUSTOM` backends now return a portable JSON policy envelope instead of raising `ValueError`
 
 **Public API** (`__init__.py`)
-- Rewritten to export all 11 backend symbols, full OPA gap surface, testing/bundle/decision_log helpers, and `initialize()` factory function
+- Rewritten to export all 10 vendor backend symbols + generic HTTP adapter, full OPA gap surface, testing/bundle/decision_log helpers, and `initialize()` factory function
 
 **Dashboard**
 - Visual scan progress overlay — live probe counter and per-category status during an active Red Team run
@@ -32,7 +32,7 @@ All notable changes are documented here. Dates use ISO 8601 (YYYY-MM-DD).
 - Redesigned `docs/index.html` — light theme matching dashboard, General Purpose / Specialized grouping, live benchmark data, footnotes, archive table
 
 **Benchmark Report** (`docs/benchmarks/benchmark_2026_06.*`)
-- June 2026 benchmark: 78 probes × 11 backends; best overall OpenAI Moderation (100 %)
+- June 2026 benchmark: 78 probes × 10 vendor backends + generic HTTP adapter; best overall OpenAI Moderation (100 %)
 
 ### Changed
 

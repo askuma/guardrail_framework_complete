@@ -1004,7 +1004,7 @@ const BACKEND_SCOPE = {
   guardrails_ai:         { type: 'specialized', label: 'Validation Framework',    note: 'Requires validators; compare within PII / content use cases' },
   presidio:              { type: 'specialized', label: 'PII Detection',            note: 'Designed for PII and credential detection (LLM06) only' },
   lakera:                { type: 'general',     label: 'Prompt Security' },
-  ga_guard:              { type: 'general',     label: 'Content Safety' },
+  ga_guard:              { type: 'custom',       label: 'Custom HTTP Endpoint',         tooltip: 'Generic HTTP adapter — set GA_GUARD_API_URL to benchmark your own endpoint', isCustomAdapter: true },
   openai_moderation:     { type: 'specialized', label: 'Content Moderation',      note: 'Content policy classification only; subject to rate limits' },
   azure_content_safety:  { type: 'general',     label: 'Content Safety' },
   azure_prompt_shields:  { type: 'specialized', label: 'Prompt Injection Guard',  note: 'Designed specifically for prompt injection detection' },
@@ -1162,7 +1162,6 @@ function RedTeamTab({ toast }) {
           { name: 'GuardrailsAI',           color: '#a78bfa', eta: 28,  dur: 2.1 },
           { name: 'Presidio',               color: '#fb923c', eta: 12,  dur: 1.9 },
           { name: 'Lakera Guard',           color: '#4ade80', eta: 35,  dur: 2.3 },
-          { name: 'GA Guard',               color: '#f472b6', eta: 8,   dur: 1.6 },
           { name: 'OpenAI Moderation',      color: '#60a5fa', eta: 45,  dur: 2.0 },
           { name: 'Azure Content Safety',   color: '#34d399', eta: 55,  dur: 1.8 },
           { name: 'Azure Prompt Shields',   color: '#fbbf24', eta: 62,  dur: 2.4 },
@@ -1292,15 +1291,38 @@ function RedTeamTab({ toast }) {
         <p style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
           Backend <span style={{ color: C.muted }}>(for single-backend run)</span>
         </p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-          {backends.map(b => (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          {backends.filter(b => b !== 'ga_guard').map(b => (
             <button key={b} onClick={() => setSelectedBackend(b)} style={{
               padding: '5px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
               border: `1px solid ${selectedBackend === b ? C.blue : C.border}`,
               backgroundColor: selectedBackend === b ? C.blue + '22' : 'transparent',
               color: selectedBackend === b ? C.blue : C.muted,
-            }}>{b.replace(/_/g, ' ')}</button>
+            }}>
+              {b.replace(/_/g, ' ')}
+            </button>
           ))}
+        </div>
+
+        {/* Custom endpoint section — visually separated from vendor backends */}
+        <div style={{ borderTop: `1px solid ${C.border}44`, paddingTop: 10, marginBottom: 16 }}>
+          <p style={{ fontSize: 11, color: C.muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Custom Endpoint
+          </p>
+          <button onClick={() => setSelectedBackend('ga_guard')}
+            title="Generic HTTP adapter — set GA_GUARD_API_URL to benchmark your own endpoint"
+            style={{
+              padding: '5px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+              border: `1px solid ${selectedBackend === 'ga_guard' ? C.border : C.border + '88'}`,
+              backgroundColor: selectedBackend === 'ga_guard' ? 'rgba(255,255,255,0.07)' : 'transparent',
+              color: selectedBackend === 'ga_guard' ? C.text : C.muted,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+            <span style={{ fontSize: 13 }}>⚙</span> ga guard
+          </button>
+          <p style={{ fontSize: 11, color: C.muted, marginTop: 6, fontStyle: 'italic' }}>
+            Requires <code style={{ fontFamily: FONT_MONO, fontSize: 10 }}>GA_GUARD_API_URL</code> to be configured
+          </p>
         </div>
 
         <p style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>
@@ -1345,12 +1367,75 @@ function RedTeamTab({ toast }) {
         const scope       = compareReport.backend_scope || BACKEND_SCOPE;
         const totalProbes = 78; // total probes in the library
         const generalBackends     = compareReport.backends_tested.filter(b => scope[b]?.type === 'general');
-        const specializedBackends = compareReport.backends_tested.filter(b => scope[b]?.type !== 'general');
+        const specializedBackends = compareReport.backends_tested.filter(b => scope[b]?.type === 'specialized');
+        const customBackends      = compareReport.backends_tested.filter(b => scope[b]?.type === 'custom');
+
+        const renderCustomAdapterRow = (backend) => {
+          const rep  = compareReport.reports[backend];
+          const hasScores = rep && (rep.total_probes ?? 0) > 0;
+          if (!hasScores) {
+            return (
+              <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22`, opacity: 0.5 }}>
+                <td style={{ padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: C.muted, fontStyle: 'italic', fontSize: 13 }}>⚙ GA Guard / Custom HTTP</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 3, fontStyle: 'italic' }}>
+                    Set <code style={{ fontFamily: FONT_MONO, fontSize: 10 }}>GA_GUARD_API_URL</code> to test your endpoint
+                  </div>
+                </td>
+                <td style={{ padding: '10px 12px', textAlign: 'center', color: C.muted, fontStyle: 'italic' }}>—</td>
+                {RT_OWASP.map(({ ref }) => (
+                  <td key={ref} style={{ padding: '10px 6px', textAlign: 'center', color: C.muted }}
+                    title="Set GA_GUARD_API_URL to run custom endpoint benchmarks">—</td>
+                ))}
+                <td style={{ padding: '10px 12px', textAlign: 'right', color: C.muted }}>—</td>
+              </tr>
+            );
+          }
+          const rate = rep.pass_rate ?? 0;
+          const ran  = rep.total_probes ?? 0;
+          return (
+            <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22` }}>
+              <td style={{ padding: '10px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ color: C.muted, fontWeight: 500, fontSize: 13 }}>⚙ ga guard</span>
+                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 3,
+                    backgroundColor: C.border + '44', color: C.muted, fontStyle: 'italic' }}>custom endpoint</span>
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2, fontStyle: 'italic' }}>
+                  * Custom endpoint — results not included in official benchmark comparison
+                </div>
+              </td>
+              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                <span style={{ fontWeight: 600, fontSize: 14, color: passColor(rate) }}>
+                  {(rate * 100).toFixed(0)}%
+                </span>
+                <div style={{ fontSize: 10, color: C.muted }}>{ran}/{totalProbes} probes</div>
+              </td>
+              {RT_OWASP.map(({ ref }) => {
+                const cr = pivot[backend]?.[ref]?.pass_rate;
+                return (
+                  <td key={ref} style={{ padding: '10px 6px', textAlign: 'center' }}>
+                    {cr != null
+                      ? <span style={{ color: passColor(cr), fontSize: 12 }}>{(cr * 100).toFixed(0)}%</span>
+                      : <span style={{ color: C.border }}>—</span>}
+                  </td>
+                );
+              })}
+              <td style={{ padding: '10px 12px', textAlign: 'right', color: C.sub }}>
+                {rep.average_latency_ms?.toFixed(0) ?? '—'}
+              </td>
+            </tr>
+          );
+        };
 
         const renderBackendRow = (backend) => {
           const skipReason = compareReport.skipped_backends?.[backend];
           if (skipReason) {
-            const badgeLabel = skipReason === 'MISSING_CREDENTIALS' ? 'MISSING CREDENTIALS' : 'PENDING LLM BACKEND';
+            const badgeLabel = skipReason === 'MISSING_CREDENTIALS'
+              ? 'MISSING CREDENTIALS'
+              : 'PENDING LLM BACKEND';
             return (
               <tr key={backend} style={{ borderBottom: `1px solid ${C.border}22`, opacity: 0.45 }}>
                 <td style={{ padding: '10px 12px' }}>
@@ -1361,7 +1446,8 @@ function RedTeamTab({ toast }) {
                 </td>
                 <td style={{ padding: '10px 12px', textAlign: 'center', color: C.muted }}>—</td>
                 {RT_OWASP.map(({ ref }) => (
-                  <td key={ref} style={{ padding: '10px 6px', textAlign: 'center', color: C.muted }} title="Category not tested — credentials missing">—</td>
+                  <td key={ref} style={{ padding: '10px 6px', textAlign: 'center', color: C.muted }}
+                    title="Category not tested — credentials missing">—</td>
                 ))}
                 <td style={{ padding: '10px 12px', textAlign: 'right', color: C.muted }}>—</td>
               </tr>
@@ -1375,7 +1461,7 @@ function RedTeamTab({ toast }) {
           const isBest      = backend === compareReport.best_overall;
           const isWorst     = backend === compareReport.worst_overall && !isBest;
           const scopeMeta   = scope[backend];
-          const isSpecialized = scopeMeta?.type !== 'general';
+          const isSpecialized = scopeMeta?.type === 'specialized';
           const lowCoverage = covPct < 50;
 
           return (
@@ -1388,10 +1474,10 @@ function RedTeamTab({ toast }) {
                   {isBest  && <Badge color={C.green}>Best</Badge>}
                   {isWorst && <Badge color={C.red}>Worst</Badge>}
                   {isSpecialized && scopeMeta?.label && (
-                    <span title={scopeMeta.note || scopeMeta.label} style={{
+                    <span title={scopeMeta.tooltip || scopeMeta.label} style={{
                       fontSize: 10, padding: '2px 6px', borderRadius: 3,
                       backgroundColor: C.purple + '22', color: C.purple,
-                      fontWeight: 500, cursor: scopeMeta.note ? 'help' : 'default',
+                      fontWeight: 500, cursor: scopeMeta.tooltip ? 'help' : 'default',
                     }}>{scopeMeta.label}</span>
                   )}
                 </div>
@@ -1475,6 +1561,9 @@ function RedTeamTab({ toast }) {
                   {generalBackends.map(renderBackendRow)}
                   {specializedBackends.length > 0 && sectionHeader('Specialized Tools', C.purple)}
                   {specializedBackends.map(renderBackendRow)}
+                  {(customBackends.length > 0 || compareReport.skipped_backends?.['ga_guard']) && sectionHeader('Custom Endpoint', C.muted)}
+                  {customBackends.map(renderCustomAdapterRow)}
+                  {!customBackends.includes('ga_guard') && compareReport.skipped_backends?.['ga_guard'] && renderCustomAdapterRow('ga_guard')}
                 </tbody>
               </table>
             </div>
@@ -1487,6 +1576,7 @@ function RedTeamTab({ toast }) {
                 <li>★ marks the category winner (highest pass rate for that OWASP category).</li>
                 <li><span style={{ color: C.amber }}>⚠ n/78 probes</span> — fewer than 50% of probes ran; backend excluded from Best / Worst ranking.</li>
                 <li><span style={{ color: C.purple }}>Specialized Tools</span> are purpose-built for a specific use case (PII detection, content moderation, injection detection) and are not directly comparable to general-purpose guardrails on overall pass rate.</li>
+                <li><span style={{ color: C.muted }}>⚙ Custom Endpoint</span> rows show results for the generic HTTP adapter (ga_guard). Results are not included in official Best/Worst ranking — set <code style={{ fontFamily: FONT_MONO, fontSize: 10 }}>GA_GUARD_API_URL</code> to enable.</li>
               </ul>
             </div>
           </Card>
@@ -1855,7 +1945,7 @@ export default function App() {
                 Guardrail Control Center
               </h1>
               <p style={{ fontSize: 11, color: C.navMuted, margin: 0, letterSpacing: '0.02em' }}>
-                Unified AI safety monitoring · 11 backends
+                Unified AI safety monitoring · 10 backends + custom endpoint
               </p>
             </div>
           </div>
