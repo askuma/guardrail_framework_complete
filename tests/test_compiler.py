@@ -88,15 +88,16 @@ def test_compile_presidio():
     assert conf["pii_detection"]["confidence_threshold"] == 0.8
     assert "CREDIT_CARD" in conf["pii_detection"]["entities"]
     
-def test_unsupported_backend():
+def test_custom_backend_generic_compile():
     compiler = PolicyCompiler()
     policy = UnifiedPolicyBuilder() \
         .with_name("Test Custom") \
         .with_backend(GuardrailBackend.CUSTOM) \
         .build()
-        
-    with pytest.raises(ValueError, match="No compiler for backend"):
-        compiler.compile(policy)
+
+    result = compiler.compile(policy)
+    assert result["backend"] == "custom"
+    assert result["name"] == "Test Custom"
 
 def test_policy_templates():
     strict = PolicyTemplates.strict_security()
