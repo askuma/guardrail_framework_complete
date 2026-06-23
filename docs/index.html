@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GuardrailProbe — OWASP LLM Top 10 Benchmark</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -13,41 +16,69 @@
       --border:   #e2e8f0;
       --text:     #0f172a;
       --sub:      #475569;
-      --muted:    #94a3b8;
-      --blue:     #0284c7;
+      --muted:    #64748b;
+      --blue:     #1d4ed8;
+      --blue-lt:  #3b82f6;
       --green:    #059669;
       --amber:    #d97706;
       --red:      #dc2626;
       --purple:   #7c3aed;
       --surface:  #f1f5f9;
-      --font:     -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --font-sans: 'Fira Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --font-mono: 'Fira Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
     }
 
-    html { font-size: 15px; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.5; }
+    html { font-size: 16px; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); line-height: 1.6; }
 
-    a { color: var(--blue); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    a { color: var(--blue-lt); text-decoration: none; transition: color 0.15s ease; }
+    a:hover { color: var(--blue); text-decoration: underline; }
+
+    :focus-visible { outline: 2px solid var(--blue-lt); outline-offset: 3px; border-radius: 3px; }
+    :focus:not(:focus-visible) { outline: none; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
 
     /* ── Layout ── */
-    .container { max-width: 1300px; margin: 0 auto; padding: 0 32px; }
+    .container { max-width: 1300px; margin: 0 auto; padding: 0 24px; }
+    @media (min-width: 640px) { .container { padding: 0 32px; } }
+    @media (min-width: 1024px) { .container { padding: 0 48px; } }
 
     /* ── Top header bar ── */
     .topbar {
       background: var(--card);
       border-bottom: 1px solid var(--border);
-      padding: 18px 0;
+      padding: 16px 0;
     }
     .topbar-inner {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
     }
-    .topbar h1 { font-size: 22px; font-weight: 700; color: var(--text); }
-    .topbar .subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
-    .topbar-links { display: flex; gap: 16px; flex-wrap: wrap; }
-    .topbar-links a { font-size: 13px; color: var(--sub); }
-    .topbar-links a:hover { color: var(--blue); }
+    .topbar h1 {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .topbar h1 svg { flex-shrink: 0; }
+    .topbar .subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; letter-spacing: 0.02em; }
+    .topbar-links { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+    .topbar-links a {
+      font-size: 13px;
+      color: var(--sub);
+      padding: 4px 2px;
+      cursor: pointer;
+      transition: color 0.15s ease;
+    }
+    .topbar-links a:hover { color: var(--blue-lt); text-decoration: none; }
 
     /* ── Content area ── */
     .content { padding: 28px 0 64px; }
@@ -66,8 +97,8 @@
       border-radius: 8px;
       padding: 18px 20px;
     }
-    .stat-card .stat-label  { font-size: 12px; color: var(--sub); margin-bottom: 8px; }
-    .stat-card .stat-value  { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .stat-card .stat-label  { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sub); margin-bottom: 8px; }
+    .stat-card .stat-value  { font-family: var(--font-mono); font-size: 26px; font-weight: 700; margin-bottom: 4px; }
     .stat-card .stat-sub    { font-size: 12px; color: var(--muted); }
 
     /* ── Card ── */
@@ -87,7 +118,7 @@
       align-items: center;
       margin-bottom: 20px;
     }
-    .section-head h2 { font-size: 18px; font-weight: 600; color: var(--text); }
+    .section-head h2 { font-family: var(--font-mono); font-size: 17px; font-weight: 600; color: var(--text); }
 
     /* ── Card title ── */
     .card-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
@@ -109,11 +140,15 @@
       text-align: left;
       padding: 8px 12px;
       color: var(--sub);
-      font-weight: 500;
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
     }
     th.center, td.center { text-align: center; }
     th.right,  td.right  { text-align: right; }
     td { padding: 10px 12px; border-bottom: 1px solid rgba(226,232,240,0.5); vertical-align: middle; }
+    tbody tr:not(.group-hdr):hover { background: rgba(241,245,249,0.8); }
 
     /* ── Group header row ── */
     .group-hdr td {
@@ -153,16 +188,18 @@
     }
     .dl-bar .dl-label { font-size: 13px; font-weight: 600; color: var(--text); }
     .dl-btn {
+      font-family: var(--font-sans);
       font-size: 12px;
-      color: var(--blue);
+      color: var(--blue-lt);
       padding: 5px 12px;
-      border: 1px solid var(--blue);
-      border-radius: 4px;
+      border: 1px solid var(--blue-lt);
+      border-radius: 5px;
       font-weight: 500;
       background: transparent;
       cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
     }
-    .dl-btn:hover { background: rgba(2,132,199,.08); text-decoration: none; }
+    .dl-btn:hover { background: rgba(59,130,246,.1); color: var(--blue); border-color: var(--blue); text-decoration: none; }
 
     /* ── Archive table ── */
     .archive-winner { color: var(--green); font-weight: 500; }
@@ -178,7 +215,7 @@
       font-size: 12px;
       color: var(--text);
       line-height: 1.6;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-family: var(--font-mono);
     }
 
     /* ── Footer ── */
@@ -196,8 +233,7 @@
 
     /* ── Responsive ── */
     @media (max-width: 640px) {
-      .container { padding: 0 16px; }
-      .topbar h1 { font-size: 17px; }
+      .topbar h1 { font-size: 16px; }
       .stat-grid { grid-template-columns: 1fr 1fr; }
     }
   </style>
@@ -208,8 +244,11 @@
 <div class="topbar">
   <div class="container topbar-inner">
     <div>
-      <h1>🛡️ GuardrailProbe</h1>
-      <p class="subtitle">Independent OWASP LLM Top 10 benchmark for AI guardrail backends · Updated monthly</p>
+      <h1>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--blue-lt)"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+        GuardrailProbe
+      </h1>
+      <p class="subtitle">Independent OWASP LLM Top 10 benchmark for AI guardrail backends &middot; Updated monthly</p>
     </div>
     <div class="topbar-links">
       <a href="https://github.com/askuma/guardrailprobe" target="_blank" rel="noopener">GitHub</a>
