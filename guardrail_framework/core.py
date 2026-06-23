@@ -2566,10 +2566,16 @@ class GuardrailFramework:
             pass
         return policy.id
 
-    # Keys that backend resolves from env vars only — must not be overridable
-    # via policy.rules to prevent an authenticated caller from redirecting API
-    # calls to an attacker-controlled key or endpoint.
-    _BLOCKED_RULE_KEYS: frozenset = frozenset({"api_key", "api_url"})
+    # Keys that must not be overridable via policy.rules by authenticated callers.
+    # - api_key / api_url: prevent redirecting backend calls to attacker-controlled endpoints
+    # - colang_policy / nemo_yaml: prevent replacing NeMo Guardrails DSL with permissive
+    #   attacker-supplied policy that silently bypasses all guardrail checks
+    _BLOCKED_RULE_KEYS: frozenset = frozenset({
+        "api_key",
+        "api_url",
+        "colang_policy",
+        "nemo_yaml",
+    })
 
     # Tool-enforcement keys that must be reset before each policy evaluation
     # so that state from a previous policy's rules never bleeds into the next.

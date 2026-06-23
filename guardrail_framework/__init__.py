@@ -3,10 +3,12 @@ Guardrail Framework Abstraction Layer
 Unified interface for AI safety guardrails across multiple backends
 """
 
+from typing import Optional
+
 __version__ = "1.0.0"
 __author__ = "Enterprise AI Safety Team"
 
-# Core exports
+# ── Core ──────────────────────────────────────────────────────────────────────
 from .core import (
     GuardrailFramework,
     GuardrailPolicy,
@@ -16,27 +18,34 @@ from .core import (
     ActionType,
     ABTestConfig,
     GuardrailBackendInterface,
+    # Backend implementations — all inherit GuardrailBackendInterface
     NemoGuardrailsBackend,
     GuardrailsAIBackend,
     PresidioBackend,
     LakeraGuardBackend,
     GAGuardBackend,
+    OpenAIModerationBackend,
+    AzureContentSafetyBackend,
+    AzurePromptShieldsBackend,
+    AWSBedrockBackend,
+    LlamaFirewallBackend,
+    LLMGuardBackend,
     get_framework,
 )
 
-# Auth / persistence / rate-limiting
+# ── Auth / persistence / rate-limiting ────────────────────────────────────────
 from .auth import APIKeyMiddleware, load_api_keys
 from .persistence import PersistenceLayer
 from .rate_limiter import PolicyRateLimiter, policy_rate_limiter
 
-# Compiler exports
+# ── Compiler / policy builder / templates ─────────────────────────────────────
 from .compiler import (
     PolicyCompiler,
     UnifiedPolicyBuilder,
     PolicyTemplates,
 )
 
-# Observability exports
+# ── Observability ─────────────────────────────────────────────────────────────
 from .observability import (
     MetricsCollector,
     AlertingSystem,
@@ -48,71 +57,7 @@ from .observability import (
     ObservabilityStack,
 )
 
-# Convenience function to initialize everything
-def initialize(config: dict = None):
-    """
-    Initialize the guardrail framework with optional configuration
-    
-    Args:
-        config: Optional configuration dictionary
-        
-    Returns:
-        GuardrailFramework instance with observability stack
-    """
-    framework = get_framework()
-    observability = ObservabilityStack()
-    
-    return {
-        "framework": framework,
-        "observability": observability,
-        "compiler": PolicyCompiler(),
-    }
-
-
-__all__ = [
-    # Core
-    "GuardrailFramework",
-    "GuardrailPolicy",
-    "GuardrailBackend",
-    "GuardrailResult",
-    "RiskCategory",
-    "ActionType",
-    "ABTestConfig",
-    "GuardrailBackendInterface",
-    "NemoGuardrailsBackend",
-    "GuardrailsAIBackend",
-    "PresidioBackend",
-    "LakeraGuardBackend",
-    "GAGuardBackend",
-    "get_framework",
-
-    # Auth / persistence / rate-limiting
-    "APIKeyMiddleware",
-    "load_api_keys",
-    "PersistenceLayer",
-    "PolicyRateLimiter",
-    "policy_rate_limiter",
-
-    # Compiler
-    "PolicyCompiler",
-    "UnifiedPolicyBuilder",
-    "PolicyTemplates",
-
-    # Observability
-    "MetricsCollector",
-    "AlertingSystem",
-    "Alert",
-    "AlertSeverity",
-    "AlertType",
-    "AuditLogger",
-    "PerformanceMonitor",
-    "ObservabilityStack",
-
-    # Helpers
-    "initialize",
-]
-
-# ── OPA gap implementations ──────────────────────────────────
+# ── Testing / policy validation ───────────────────────────────────────────────
 from .testing import (
     PolicyTestCase,
     PolicyTestRunner,
@@ -120,10 +65,14 @@ from .testing import (
     TestSuiteReport,
     fail_closed_result,
 )
+
+# ── Decision logging ──────────────────────────────────────────────────────────
 from .decision_log import (
     DecisionEvent,
     DecisionLogShipper,
 )
+
+# ── Bundle distribution / versioning ─────────────────────────────────────────
 from .bundle import (
     BundleBuilder,
     BundleLoader,
@@ -134,6 +83,8 @@ from .bundle import (
     PolicyPushChannel,
     push_channel,
 )
+
+# ── OPA gap implementations ───────────────────────────────────────────────────
 from .opa_gaps import (
     PolicyPrecompiler,
     ResidualQuery,
@@ -150,3 +101,107 @@ from .opa_gaps import (
     data_registry,
     wasm_scorer,
 )
+
+
+def initialize(_config: Optional[dict] = None) -> dict:
+    """Initialize the guardrail framework.
+
+    Returns a dict with ``framework``, ``observability``, and ``compiler``
+    keys, all wired together and ready to use.
+    """
+    framework = get_framework()
+    observability = ObservabilityStack()
+    return {
+        "framework": framework,
+        "observability": observability,
+        "compiler": PolicyCompiler(),
+    }
+
+
+__all__ = [
+    # ── Core ──────────────────────────────────────────────────────────────
+    "GuardrailFramework",
+    "GuardrailPolicy",
+    "GuardrailBackend",
+    "GuardrailResult",
+    "RiskCategory",
+    "ActionType",
+    "ABTestConfig",
+    "GuardrailBackendInterface",
+    # Backends (local / free)
+    "NemoGuardrailsBackend",
+    "GuardrailsAIBackend",
+    "PresidioBackend",
+    "LlamaFirewallBackend",
+    "LLMGuardBackend",
+    # Backends (cloud API key required)
+    "LakeraGuardBackend",
+    "GAGuardBackend",
+    "OpenAIModerationBackend",
+    "AzureContentSafetyBackend",
+    "AzurePromptShieldsBackend",
+    "AWSBedrockBackend",
+    "get_framework",
+
+    # ── Auth / persistence / rate-limiting ────────────────────────────────
+    "APIKeyMiddleware",
+    "load_api_keys",
+    "PersistenceLayer",
+    "PolicyRateLimiter",
+    "policy_rate_limiter",
+
+    # ── Compiler / policy builder / templates ─────────────────────────────
+    "PolicyCompiler",
+    "UnifiedPolicyBuilder",
+    "PolicyTemplates",
+
+    # ── Observability ─────────────────────────────────────────────────────
+    "MetricsCollector",
+    "AlertingSystem",
+    "Alert",
+    "AlertSeverity",
+    "AlertType",
+    "AuditLogger",
+    "PerformanceMonitor",
+    "ObservabilityStack",
+
+    # ── Testing / policy validation ───────────────────────────────────────
+    "PolicyTestCase",
+    "PolicyTestRunner",
+    "TestResult",
+    "TestSuiteReport",
+    "fail_closed_result",
+
+    # ── Decision logging ──────────────────────────────────────────────────
+    "DecisionEvent",
+    "DecisionLogShipper",
+
+    # ── Bundle distribution / versioning ──────────────────────────────────
+    "BundleBuilder",
+    "BundleLoader",
+    "BundlePoller",
+    "BundleMetadata",
+    "PolicyVersionStore",
+    "PolicySnapshot",
+    "PolicyPushChannel",
+    "push_channel",
+
+    # ── OPA gap implementations ───────────────────────────────────────────
+    "PolicyPrecompiler",
+    "ResidualQuery",
+    "PrometheusMetrics",
+    "StatusReporter",
+    "PolicyStatus",
+    "WasmReadyScorer",
+    "DataProvider",
+    "StaticBlocklistProvider",
+    "HttpDataProvider",
+    "DataProviderRegistry",
+    "prom_metrics",
+    "status_reporter",
+    "data_registry",
+    "wasm_scorer",
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+    "initialize",
+]

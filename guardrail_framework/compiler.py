@@ -5,28 +5,37 @@ Converts unified policy format to backend-specific configurations (Colang, YAML,
 
 import json
 from typing import Dict, Any, Optional
-from dataclasses import asdict
 from .core import GuardrailPolicy, RiskCategory, ActionType, GuardrailBackend
 
 
 class PolicyCompiler:
     """Compile unified policy format to backend-specific configurations"""
-    
+
     def __init__(self):
         self.compilers = {
-            GuardrailBackend.NEMO: self.compile_to_colang,
-            GuardrailBackend.GUARDRAILS_AI: self.compile_to_guardrails_yaml,
-            GuardrailBackend.PRESIDIO: self.compile_to_presidio,
+            GuardrailBackend.NEMO:                  self.compile_to_colang,
+            GuardrailBackend.GUARDRAILS_AI:         self.compile_to_guardrails_yaml,
+            GuardrailBackend.PRESIDIO:              self.compile_to_presidio,
+            GuardrailBackend.LLAMA_FIREWALL:        self.compile_to_llama_firewall,
+            GuardrailBackend.LLM_GUARD:             self.compile_to_llm_guard,
+            GuardrailBackend.OPENAI_MODERATION:     self.compile_to_openai_moderation,
+            GuardrailBackend.AZURE_CONTENT_SAFETY:  self.compile_to_azure_content_safety,
+            GuardrailBackend.AZURE_PROMPT_SHIELDS:  self.compile_to_azure_prompt_shields,
+            GuardrailBackend.AWS_BEDROCK:           self.compile_to_aws_bedrock,
+            GuardrailBackend.LAKERA:                self.compile_to_lakera,
+            GuardrailBackend.GA_GUARD:              self.compile_to_ga_guard,
         }
-    
+
     def compile(self, policy: GuardrailPolicy, target_backend: Optional[GuardrailBackend] = None) -> Dict[str, Any]:
-        """Compile policy to target backend format(s)"""
+        """Compile policy to target backend format."""
         backend = target_backend or policy.backend
         compiler_func = self.compilers.get(backend)
-        
+
         if not compiler_func:
-            raise ValueError(f"No compiler for backend: {backend}")
-        
+            # Unknown / custom backend — return a generic representation so
+            # callers never need to handle a ValueError from the compiler.
+            return self._compile_generic(policy, backend)
+
         return compiler_func(policy)
     
     def compile_to_colang(self, policy: GuardrailPolicy) -> Dict[str, Any]:
@@ -135,6 +144,168 @@ class PolicyCompiler:
             "presidio_config": presidio_config
         }
     
+    def compile_to_llama_firewall(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to LlamaFirewall (Meta PromptGuard 2) config.
+
+        LlamaFirewall is fully local — no credentials or external calls.
+        The model runs inference on every input; the config captures which
+        risk categories should trigger a block decision.
+        """
+        risk_labels = [r.value for r in policy.risk_categories]
+        return {
+            "backend": GuardrailBackend.LLAMA_FIREWALL.value,
+            "model": "meta-llama/Prompt-Guard-2-86M",
+            "block_on_decision": ["BLOCK", "HUMAN_REVIEW"],
+            "risk_categories": risk_labels,
+            "action_on_violation": policy.action_on_violation.value,
+            "sensitivity": policy.sensitivity,
+        }
+
+    def compile_to_llm_guard(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to LLM Guard (Protect AI) scanner config.
+
+        LLM Guard is fully local.  Input scanners run on every prompt;
+        output scanners run on model responses.  Scanner selection mirrors
+        the policy's risk categories.
+        """
+        risk_set = {r for r in policy.risk_categories}
+
+        input_scanners: list = []
+        output_scanners: list = []
+
+        if RiskCategory.PROMPT_INJECTION in risk_set:
+            input_scanners.append("PromptInjection")
+        if RiskCategory.JAILBREAKING in risk_set or RiskCategory.PROMPT_INJECTION in risk_set:
+            input_scanners.append("Toxicity")
+        if RiskCategory.DATA_LEAKAGE in risk_set:
+            input_scanners.append("Anonymize")
+            output_scanners.append("Deanonymize")
+        if RiskCategory.UNSAFE_CODE in risk_set:
+            input_scanners.append("Code")
+            output_scanners.append("Code")
+        if not input_scanners:
+            input_scanners = ["PromptInjection", "Toxicity"]
+
+        output_scanners = output_scanners or ["Toxicity"]
+
+        return {
+            "backend": GuardrailBackend.LLM_GUARD.value,
+            "input_scanners": input_scanners,
+            "output_scanners": output_scanners,
+            "fail_fast": policy.sensitivity == "high",
+            "action_on_violation": policy.action_on_violation.value,
+        }
+
+    def compile_to_openai_moderation(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to OpenAI Moderation API config.
+
+        Requires OPENAI_API_KEY.  The API maps policy risk categories to
+        OpenAI moderation category flags.
+        """
+        category_map = {
+            RiskCategory.JAILBREAKING:      ["hate", "harassment", "self-harm", "sexual", "violence"],
+            RiskCategory.PROMPT_INJECTION:  ["illicit", "illicit/violent"],
+            RiskCategory.UNSAFE_CODE:       ["illicit"],
+            RiskCategory.DATA_LEAKAGE:      [],
+        }
+        flagged_categories: list = []
+        for risk in policy.risk_categories:
+            flagged_categories.extend(category_map.get(risk, []))
+
+        return {
+            "backend": GuardrailBackend.OPENAI_MODERATION.value,
+            "api_key_env": "OPENAI_API_KEY",
+            "model": "text-moderation-latest",
+            "monitored_categories": list(dict.fromkeys(flagged_categories)),
+            "action_on_violation": policy.action_on_violation.value,
+        }
+
+    def compile_to_azure_content_safety(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to Azure AI Content Safety config.
+
+        Requires AZURE_CONTENT_SAFETY_ENDPOINT and AZURE_CONTENT_SAFETY_KEY.
+        Block threshold is derived from policy sensitivity.
+        """
+        threshold_map = {"low": 6, "medium": 4, "high": 2}
+        threshold = threshold_map.get(policy.sensitivity, 4)
+
+        return {
+            "backend": GuardrailBackend.AZURE_CONTENT_SAFETY.value,
+            "endpoint_env": "AZURE_CONTENT_SAFETY_ENDPOINT",
+            "api_key_env": "AZURE_CONTENT_SAFETY_KEY",
+            "api_version": "2023-10-01",
+            "block_threshold": threshold,
+            "action_on_violation": policy.action_on_violation.value,
+        }
+
+    def compile_to_azure_prompt_shields(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to Azure AI Prompt Shields config.
+
+        Dedicated endpoint for detecting direct and indirect prompt injection.
+        Shares credentials with Azure Content Safety.
+        """
+        return {
+            "backend": GuardrailBackend.AZURE_PROMPT_SHIELDS.value,
+            "endpoint_env": "AZURE_CONTENT_SAFETY_ENDPOINT",
+            "api_key_env": "AZURE_CONTENT_SAFETY_KEY",
+            "api_version": "2024-02-15-preview",
+            "detect_direct_attack": True,
+            "detect_indirect_attack": RiskCategory.INDIRECT_ATTACK in policy.risk_categories,
+            "action_on_violation": policy.action_on_violation.value,
+        }
+
+    def compile_to_aws_bedrock(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to AWS Bedrock Guardrails config.
+
+        Requires AWS credentials (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or
+        an IAM role), plus AWS_BEDROCK_GUARDRAIL_ID and AWS_BEDROCK_GUARDRAIL_VERSION.
+        """
+        return {
+            "backend": GuardrailBackend.AWS_BEDROCK.value,
+            "region_env": "AWS_DEFAULT_REGION",
+            "guardrail_id_env": "AWS_BEDROCK_GUARDRAIL_ID",
+            "guardrail_version_env": "AWS_BEDROCK_GUARDRAIL_VERSION",
+            "risk_categories": [r.value for r in policy.risk_categories],
+            "action_on_violation": policy.action_on_violation.value,
+        }
+
+    def compile_to_lakera(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to Lakera Guard config.
+
+        Requires LAKERA_GUARD_API_KEY.
+        """
+        return {
+            "backend": GuardrailBackend.LAKERA.value,
+            "api_key_env": "LAKERA_GUARD_API_KEY",
+            "risk_categories": [r.value for r in policy.risk_categories],
+            "action_on_violation": policy.action_on_violation.value,
+            "sensitivity": policy.sensitivity,
+        }
+
+    def compile_to_ga_guard(self, policy: GuardrailPolicy) -> Dict[str, Any]:
+        """Compile to Galileo Protect (GA Guard) config.
+
+        Requires GA_GUARD_API_KEY.
+        """
+        return {
+            "backend": GuardrailBackend.GA_GUARD.value,
+            "api_key_env": "GA_GUARD_API_KEY",
+            "risk_categories": [r.value for r in policy.risk_categories],
+            "action_on_violation": policy.action_on_violation.value,
+            "sensitivity": policy.sensitivity,
+        }
+
+    def _compile_generic(self, policy: GuardrailPolicy, backend: GuardrailBackend) -> Dict[str, Any]:
+        """Fallback for custom or future backends — returns the policy as a plain dict."""
+        return {
+            "backend": backend.value if hasattr(backend, "value") else str(backend),
+            "name": policy.name,
+            "risk_categories": [r.value for r in policy.risk_categories],
+            "action_on_violation": policy.action_on_violation.value,
+            "sensitivity": policy.sensitivity,
+            "rules": policy.rules,
+        }
+
     def _generate_colang_flow(self, risk: RiskCategory, policy: GuardrailPolicy) -> Dict[str, Any]:
         """Generate Colang flow for a specific risk"""
         flow_name = f"check_{risk.value.lower()}"
@@ -331,6 +502,49 @@ class PolicyTemplates:
                 "forbidden_tools": ["delete_file", "exec_code", "drop_table"]
             }) \
             .with_tag("agent") \
+            .build()
+
+    @staticmethod
+    def prompt_injection_local() -> GuardrailPolicy:
+        """Prompt-injection defence using LlamaFirewall (Meta PromptGuard 2).
+
+        Fully local — no API key or network access required.
+        Suitable for air-gapped environments or cost-sensitive deployments.
+        """
+        return UnifiedPolicyBuilder() \
+            .with_name("Prompt Injection Guard (Local)") \
+            .with_description("LlamaFirewall PromptGuard 2 — local, no credentials needed") \
+            .with_backend(GuardrailBackend.LLAMA_FIREWALL) \
+            .with_risk_categories([
+                RiskCategory.PROMPT_INJECTION,
+                RiskCategory.JAILBREAKING,
+            ]) \
+            .with_sensitivity("high") \
+            .with_action(ActionType.BLOCK) \
+            .with_tag("local") \
+            .with_tag("prompt-injection") \
+            .build()
+
+    @staticmethod
+    def input_safety_local() -> GuardrailPolicy:
+        """Input safety scanning using LLM Guard (Protect AI).
+
+        Fully local — no API key or network access required.
+        Runs PromptInjection and Toxicity scanners on every input.
+        """
+        return UnifiedPolicyBuilder() \
+            .with_name("Input Safety Scanner (Local)") \
+            .with_description("LLM Guard PromptInjection + Toxicity scanners — local, no credentials needed") \
+            .with_backend(GuardrailBackend.LLM_GUARD) \
+            .with_risk_categories([
+                RiskCategory.PROMPT_INJECTION,
+                RiskCategory.JAILBREAKING,
+                RiskCategory.DATA_LEAKAGE,
+            ]) \
+            .with_sensitivity("high") \
+            .with_action(ActionType.BLOCK) \
+            .with_tag("local") \
+            .with_tag("toxicity") \
             .build()
 
 
