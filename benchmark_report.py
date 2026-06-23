@@ -50,9 +50,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 PROBE_LIBRARY_VERSION = "0.1.0"
 _BACKEND_CHECK_TIMEOUT = 5  # seconds per backend
 
-REASON_UNAVAILABLE     = "UNAVAILABLE"
-REASON_PENDING_LLM     = "PENDING_LLM_CREDITS"
-REASON_TIMEOUT         = "TIMEOUT"
+REASON_UNAVAILABLE              = "UNAVAILABLE"
+REASON_PENDING_LLM              = "PENDING_LLM_CREDITS"
+REASON_TIMEOUT                  = "TIMEOUT"
+REASON_CUSTOM_ENDPOINT          = "CUSTOM_ENDPOINT_NOT_CONFIGURED"
 
 _TESTABLE_BACKENDS = [
     GuardrailBackend.NEMO,
@@ -503,10 +504,8 @@ class BenchmarkRunner:
         """
         if backend == GuardrailBackend.LAKERA and not os.getenv("LAKERA_GUARD_API_KEY"):
             return REASON_UNAVAILABLE
-        if backend == GuardrailBackend.GA_GUARD and not (
-            os.getenv("GA_GUARD_API_KEY") and os.getenv("GA_GUARD_API_URL")
-        ):
-            return REASON_UNAVAILABLE
+        if backend == GuardrailBackend.GA_GUARD and not os.getenv("GA_GUARD_API_URL"):
+            return REASON_CUSTOM_ENDPOINT
 
         def _run() -> None:
             self._runner.run_against_backend(backend, probes=[probe])
@@ -1036,7 +1035,10 @@ def _tm_skipped_table(
 ) -> str:
     rows: List[str] = []
     for bname, reason in comparison.skipped_backends.items():
-        rows.append(f"| {bname} | {reason} | Configure credentials |")
+        if reason == REASON_CUSTOM_ENDPOINT:
+            rows.append(f"| {bname} | {reason} | Generic HTTP adapter — not a vendor backend. Set `GA_GUARD_API_URL` to benchmark a custom endpoint |")
+        else:
+            rows.append(f"| {bname} | {reason} | Configure credentials |")
     for p in pending_detail:
         if p["backend"] not in comparison.skipped_backends:
             note = p.get("note", "TBD")
@@ -1160,6 +1162,8 @@ def _pending_note(reason: str) -> str:
         return "SDK not installed or API credentials not configured"
     if reason == REASON_TIMEOUT:
         return "Backend did not respond within 5 s during health check"
+    if reason == REASON_CUSTOM_ENDPOINT:
+        return "Generic HTTP adapter — set GA_GUARD_API_URL to benchmark a custom endpoint. Not included in standard vendor comparison runs."
     return "Unknown"
 
 

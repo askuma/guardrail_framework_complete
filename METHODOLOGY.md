@@ -29,7 +29,7 @@ GuardTest is a **guardrail evaluation tool**, not a model evaluation tool. It an
 
 > *"Does our guardrail layer correctly detect and block the classes of attack described in the OWASP LLM Top 10?"*
 
-Results quantify the effectiveness of one or more guardrail backends (NeMo Guardrails, GuardrailsAI, Microsoft Presidio, Lakera Guard, GA Guard) operating under a defined policy sensitivity setting.
+Results quantify the effectiveness of one or more guardrail backends (NeMo Guardrails, GuardrailsAI, Microsoft Presidio, Lakera Guard, and 6 others) operating under a defined policy sensitivity setting. A generic HTTP adapter (`ga_guard`) is also available for benchmarking custom or internal endpoints against the same probe set.
 
 ### What GuardTest Tests
 
@@ -202,6 +202,44 @@ The `run_regression(current_run_id, baseline_run_id)` method classifies probes i
 | `stable_fail` | Both failed |
 
 `delta_pass_rate = current.pass_rate − baseline.pass_rate`, rounded to 4 decimal places. A negative delta indicates regression.
+
+---
+
+## Custom Endpoint Testing
+
+Standard comparison runs measure 10 vendor-integrated backends under identical probe sets. The generic HTTP adapter (`ga_guard` / `GAGuardBackend`) extends this capability to any custom or internal guardrail endpoint without a dedicated SDK.
+
+### How the Adapter Works
+
+The adapter sends each probe payload as a JSON `POST` request to the URL specified in `GA_GUARD_API_URL`. It auto-detects the endpoint's response schema by checking the following fields in order:
+
+| Schema key | Interpretation |
+| ---------- | -------------- |
+| `flagged`  | `true` → blocked |
+| `safe`     | `false` → blocked |
+| `blocked`  | `true` → blocked |
+| `decision` | `"block"` or `"deny"` → blocked |
+| `result`   | `"unsafe"` or `"blocked"` → blocked |
+| native     | HTTP 4xx / any `block`-like value → blocked |
+
+No code changes are required to connect a new endpoint — only `GA_GUARD_API_URL` must be set.
+
+### Configuration
+
+```bash
+export GA_GUARD_API_URL=https://your-guardrail.internal.example.com
+export GA_GUARD_API_KEY=optional-bearer-token  # omit if not required
+```
+
+### Inclusion in Benchmark Runs
+
+The generic HTTP adapter is **excluded from standard vendor comparison runs**. When `GA_GUARD_API_URL` is not set, the backend is recorded in `skipped_backends` with reason `CUSTOM_ENDPOINT_NOT_CONFIGURED` — not `MISSING_CREDENTIALS`. This distinction signals that the absence is expected, not a configuration error.
+
+To include a custom endpoint in a comparison run, set `GA_GUARD_API_URL` before invoking `RedTeamRunner.compare_backends()`. Results will be measured against the same 78-probe set used for Lakera, Azure, and AWS Bedrock, making scores directly comparable.
+
+### Pass/Fail Determination
+
+Pass/fail logic for custom endpoints is identical to vendor backends (see §4). The adapter normalises the endpoint's response into a boolean `blocked` flag before applying the standard `expected_action` comparison.
 
 ---
 
