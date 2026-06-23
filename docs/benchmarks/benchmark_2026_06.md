@@ -12,8 +12,8 @@
 - **Backends tested:** 10
 - **Backends skipped:** 0
 - **Total probes run:** 703
-- **Report generated:** 2026-06-22 13:48 UTC
-- **Run ID:** 1061be23-edc0-4f40-8a47-7ab608cf13cc
+- **Report generated:** 2026-06-23 05:00 UTC
+- **Run ID:** c7a02099-e0a2-46ae-aa4b-c6b8903139e5
 
 ---
 
@@ -21,16 +21,16 @@
 
 | Backend | Overall % | vs Last Month | Best Category | Worst Category | Avg Latency |
 |---------|:---------:|:-------------:|:-------------:|:--------------:|:-----------:|
-| nemo | 85.9% | — | LLM01 | LLM10 | 493 ms |
-| guardrails_ai | 85.9% | — | LLM01 | LLM10 | 151 ms |
-| presidio | 6.4% | — | LLM02 | LLM01 | 660 ms |
-| lakera | 83.3% | — | LLM01 | LLM10 | 599 ms |
-| openai_moderation | 100.0% | — | LLM01 | LLM01 | 34814 ms |
-| azure_content_safety | 25.6% | — | LLM02 | LLM01 | 1652 ms |
-| azure_prompt_shields | 24.4% | — | LLM01 | LLM09 | 1864 ms |
-| aws_bedrock | 59.0% | — | LLM01 | LLM10 | 1093 ms |
-| llama_firewall | 85.9% | — | LLM01 | LLM10 | 103 ms |
-| llm_guard | 85.9% | — | LLM01 | LLM10 | 3287 ms |
+| nemo | 85.9% | — | LLM01 | LLM10 | 1505 ms |
+| guardrails_ai | 2.6% | — | LLM07 | LLM01 | 183 ms |
+| presidio | 6.4% | — | LLM02 | LLM01 | 1578 ms |
+| lakera | 83.3% | — | LLM01 | LLM10 | 543 ms |
+| openai_moderation | 100.0% | — | LLM01 | LLM01 | 35058 ms |
+| azure_content_safety | 25.6% | — | LLM02 | LLM01 | 1124 ms |
+| azure_prompt_shields | 24.4% | — | LLM01 | LLM09 | 1427 ms |
+| aws_bedrock | 59.0% | — | LLM01 | LLM10 | 920 ms |
+| llama_firewall | 85.9% | — | LLM01 | LLM10 | 79 ms |
+| llm_guard | 85.9% | — | LLM01 | LLM10 | 351 ms |
 
 ---
 
@@ -38,16 +38,16 @@
 
 | Category | Description | Winner | Score | Runner-up | Score |
 |----------|-------------|:------:|:-----:|:---------:|:-----:|
-| LLM01 | Prompt Injection | nemo | 100% | guardrails_ai | 100% |
-| LLM02 | Insecure Output | nemo | 81% | guardrails_ai | 81% |
-| LLM03 | Training Data Poisoning | nemo | 100% | guardrails_ai | 100% |
-| LLM04 | Model DoS | nemo | 67% | guardrails_ai | 67% |
-| LLM05 | Supply Chain | nemo | 100% | guardrails_ai | 100% |
-| LLM06 | Sensitive Info Disclosure | nemo | 100% | guardrails_ai | 100% |
-| LLM07 | Insecure Plugin | nemo | 83% | guardrails_ai | 83% |
-| LLM08 | Excessive Agency | nemo | 100% | guardrails_ai | 100% |
-| LLM09 | Overreliance | nemo | 100% | guardrails_ai | 100% |
-| LLM10 | Model Theft | nemo | 20% | guardrails_ai | 20% |
+| LLM01 | Prompt Injection | nemo | 100% | lakera | 100% |
+| LLM02 | Insecure Output | nemo | 81% | lakera | 81% |
+| LLM03 | Training Data Poisoning | nemo | 100% | lakera | 100% |
+| LLM04 | Model DoS | nemo | 67% | lakera | 67% |
+| LLM05 | Supply Chain | nemo | 100% | llama_firewall | 100% |
+| LLM06 | Sensitive Info Disclosure | nemo | 100% | lakera | 100% |
+| LLM07 | Insecure Plugin | nemo | 83% | llama_firewall | 83% |
+| LLM08 | Excessive Agency | nemo | 100% | lakera | 100% |
+| LLM09 | Overreliance | nemo | 100% | lakera | 100% |
+| LLM10 | Model Theft | nemo | 20% | lakera | 20% |
 
 ---
 
@@ -60,7 +60,7 @@ expected to score higher here than on OWASP probes.
 | Backend | Hate | Violence | Sexual | Self-Harm | Overall CM Score |
 |---------|:----:|:--------:|:------:|:---------:|:----------------:|
 | nemo | 100% | 100% | 100% | 100% | 100% |
-| guardrails_ai | 100% | 100% | 100% | 100% | 100% |
+| guardrails_ai | 0% | 0% | 0% | 0% | 0% |
 | presidio | 0% | 0% | 0% | 0% | 0% |
 | lakera | 100% | 100% | 100% | 100% | 100% |
 | openai_moderation | 0% | 0% | 0% | 0% | 0% |
@@ -102,16 +102,16 @@ your latency budget.
 
 | Backend | Overall % | Avg Latency | Latency Category | Recommended For |
 |---------|:---------:|:-----------:|:----------------:|-----------------|
-| llama_firewall | 85.9% | 103 ms | Fast | Standard API protection |
-| guardrails_ai | 85.9% | 151 ms | Fast | Standard API protection |
-| nemo | 85.9% | 493 ms | Moderate | Batch processing, async pipelines |
-| lakera | 83.3% | 599 ms | Moderate | Batch processing, async pipelines |
-| presidio | 6.4% | 660 ms | Moderate | Batch processing, async pipelines |
-| aws_bedrock | 59.0% | 1093 ms | Slow | Offline analysis, compliance audits |
-| azure_content_safety | 25.6% | 1652 ms | Slow | Offline analysis, compliance audits |
-| azure_prompt_shields | 24.4% | 1864 ms | Slow | Offline analysis, compliance audits |
-| llm_guard | 85.9% | 3287 ms | Slow | Offline analysis, compliance audits |
-| openai_moderation | 100.0% | 34814 ms | Slow | Offline analysis, compliance audits |
+| llama_firewall | 85.9% | 79 ms | Fast | Standard API protection |
+| guardrails_ai | 2.6% | 183 ms | Fast | Standard API protection |
+| llm_guard | 85.9% | 351 ms | Moderate | Batch processing, async pipelines |
+| lakera | 83.3% | 543 ms | Moderate | Batch processing, async pipelines |
+| aws_bedrock | 59.0% | 920 ms | Moderate | Batch processing, async pipelines |
+| azure_content_safety | 25.6% | 1124 ms | Slow | Offline analysis, compliance audits |
+| azure_prompt_shields | 24.4% | 1427 ms | Slow | Offline analysis, compliance audits |
+| nemo | 85.9% | 1505 ms | Slow | Offline analysis, compliance audits |
+| presidio | 6.4% | 1578 ms | Slow | Offline analysis, compliance audits |
+| openai_moderation | 100.0% | 35058 ms | Slow | Offline analysis, compliance audits |
 
 Latency categories:
 - Ultra-fast: <10ms   (GA Guard)

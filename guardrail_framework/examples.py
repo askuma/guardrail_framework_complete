@@ -3,13 +3,12 @@ Guardrail Framework Usage Examples
 Demonstrates how to use the framework in real-world scenarios
 """
 
-import json
 import sys
 import os
 
 try:
     from guardrail_framework.core import (
-        GuardrailFramework, GuardrailPolicy, GuardrailBackend,
+        GuardrailFramework, GuardrailBackend,
         RiskCategory, ActionType, ABTestConfig
     )
     from guardrail_framework.compiler import PolicyCompiler, UnifiedPolicyBuilder, PolicyTemplates
@@ -17,7 +16,7 @@ try:
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from guardrail_framework.core import (
-        GuardrailFramework, GuardrailPolicy, GuardrailBackend,
+        GuardrailFramework, GuardrailBackend,
         RiskCategory, ActionType, ABTestConfig
     )
     from guardrail_framework.compiler import PolicyCompiler, UnifiedPolicyBuilder, PolicyTemplates
@@ -70,34 +69,50 @@ def example_basic_setup():
 # ============================================================================
 
 def example_multi_backend():
-    """Deploy same policy to multiple backends without code changes"""
+    """Deploy the same policy to every backend without changing application code.
+
+    Backends are grouped by what credentials they need:
+      - Local / no credentials:  Presidio, LlamaFirewall, LLM Guard
+      - Free API key:            GuardrailsAI (hub token), NeMo (OpenAI key),
+                                 OpenAI Moderation (OPENAI_API_KEY)
+      - Cloud credentials:       Lakera, GA Guard, Azure Content Safety,
+                                 Azure Prompt Shields, AWS Bedrock
+    """
     print("\n=== Example 2: Multi-Backend Routing ===\n")
-    
+
     framework = GuardrailFramework()
     compiler = PolicyCompiler()
-    
-    # Create base policy
+
     base_policy = UnifiedPolicyBuilder() \
         .with_name("Multi-Backend Policy") \
-        .with_risk_categories([RiskCategory.DATA_LEAKAGE]) \
+        .with_risk_categories([RiskCategory.PROMPT_INJECTION, RiskCategory.DATA_LEAKAGE]) \
         .with_sensitivity("high") \
-        .with_action(ActionType.REDACT) \
+        .with_action(ActionType.BLOCK) \
         .build()
-    
-    # Deploy to different backends
-    backends = [
-        GuardrailBackend.NEMO,
-        GuardrailBackend.GUARDRAILS_AI,
-        GuardrailBackend.PRESIDIO
+
+    # All supported backends — the framework routes to whichever has credentials.
+    # Backends without the required env vars return ActionType.SKIPPED gracefully.
+    all_backends = [
+        # ── Local, no credentials required ──────────────────────────────────
+        GuardrailBackend.PRESIDIO,          # PII detection via spaCy
+        GuardrailBackend.GUARDRAILS_AI,     # Hub validators (DetectPII, SecretsPresent)
+        GuardrailBackend.LLAMA_FIREWALL,    # Meta PromptGuard 2 — fully local
+        GuardrailBackend.LLM_GUARD,         # PromptInjection + Toxicity — fully local
+        # ── Requires OPENAI_API_KEY ──────────────────────────────────────────
+        GuardrailBackend.NEMO,              # NeMo Guardrails with LLM classification
+        GuardrailBackend.OPENAI_MODERATION, # OpenAI Moderation API
+        # ── Requires cloud credentials ───────────────────────────────────────
+        GuardrailBackend.LAKERA,            # LAKERA_GUARD_API_KEY
+        GuardrailBackend.GA_GUARD,          # GA_GUARD_API_KEY
+        GuardrailBackend.AZURE_CONTENT_SAFETY,   # AZURE_CONTENT_SAFETY_ENDPOINT + KEY
+        GuardrailBackend.AZURE_PROMPT_SHIELDS,   # AZURE_CONTENT_SAFETY_ENDPOINT + KEY
+        GuardrailBackend.AWS_BEDROCK,            # AWS_* credentials + guardrail ARN
     ]
-    
-    for backend in backends:
+
+    for backend in all_backends:
         base_policy.backend = backend
         policy_id = framework.create_policy(base_policy)
-        
-        # Compile to backend-specific format
         compiled = compiler.compile(base_policy, backend)
-        
         print(f"✓ Deployed to {backend.value}")
         print(f"  Policy ID: {policy_id}")
         print(f"  Config keys: {list(compiled.keys())}\n")
