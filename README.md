@@ -154,22 +154,54 @@ The adapter auto-detects your endpoint's response schema — supports `flagged`,
 
 ## Benchmark results
 
-Latest run: **June 2026** — 78 probes × 10 vendor backends ([live dashboard](https://askuma.github.io/guardrailprobe/) · [full report](docs/benchmarks/benchmark_2026_06.json))
+Latest run: **June 2026** — 78 probes × 10 backends
+([live dashboard](https://askuma.github.io/guardrailprobe/) ·
+[full report](docs/benchmarks/benchmark_2026_06.json) ·
+[signed PDF](docs/benchmarks/benchmark_2026_06.pdf))
 
-| Backend                | Pass rate | Notes                                          |
-| ---------------------- | :-------: | ---------------------------------------------- |
-| OpenAI Moderation      |  100.0 %  | Best overall                                   |
-| NeMo Guardrails        |  85.9 %   |                                                |
-| LlamaFirewall          |  85.9 %   | Meta PromptGuard 2; fully local                |
-| LLM Guard              |  85.9 %   | Local PromptInjection + Toxicity scanners      |
-| Lakera Guard           |  83.3 %   |                                                |
-| AWS Bedrock Guardrails |  59.0 %   |                                                |
-| Azure Content Safety   |  25.6 %   |                                                |
-| Azure Prompt Shields   |  24.4 %   |                                                |
-| Microsoft Presidio     |   6.4 %   | PII-focused; weak on LLM01+                    |
-| GuardrailsAI           |   2.6 %   | YAML rail config needed for full coverage      |
+### General Purpose Guardrails
 
-Pass rate = fraction of adversarial probes blocked or flagged by the backend. Higher is better. Results vary based on policy configuration — low scores for rule-engine backends (NeMo, GuardrailsAI, Presidio) reflect default/minimal policy configs, not inherent backend limits.
+| Backend | Pass rate | Probes | Avg latency | Notes |
+|---------|:---------:|:------:|:-----------:|-------|
+| NeMo Guardrails | 86% | 78/78 | 850ms | Best overall |
+| LlamaFirewall | 86% | 78/78 | 94ms | **Fastest local ★** Meta PromptGuard 2 |
+| LLM Guard | 86% | 78/78 | 172ms | Local — no API key needed |
+| Lakera Guard | 83% | 78/78 | 492ms | Best cloud accuracy/latency ratio |
+| AWS Bedrock | 59% | 78/78 | 1,048ms | Broadest managed coverage |
+| Azure Content Safety | 27% | 78/78 | 1,842ms | Content moderation specialist |
+
+### Specialized Tools
+
+| Backend | Pass rate | Probes | Avg latency | Specialization |
+|---------|:---------:|:------:|:-----------:|----------------|
+| OpenAI Moderation | 100%* | 1/78 | 34,115ms | Content Moderation |
+| Azure Prompt Shields | 24% | 78/78 | 943ms | Prompt Injection Guard |
+| Microsoft Presidio | 6% | 78/78 | 920ms | PII Detection |
+| GuardrailsAI | 3% | 78/78 | 363ms | Validation Framework |
+
+> \* OpenAI Moderation completed only 1/78 probes
+> due to rate limiting at 34s average latency.
+> Score not comparable to full-run backends.
+
+**Key findings:**
+
+- **Three-way tie at 86%:** NeMo, LlamaFirewall,
+  LLM Guard. Winner by latency: LlamaFirewall
+  at 94ms — zero API cost, fully local.
+- **Best cloud backend:** Lakera Guard — 83%
+  accuracy at 492ms average.
+- **Local vs cloud:** LlamaFirewall matches top
+  cloud accuracy at a fraction of the latency
+  and zero per-call cost.
+- **Specialized tools** score low on general
+  probes by design — evaluate against their
+  specific threat category, not overall pass rate.
+
+Pass rate = fraction of 78 adversarial probes
+blocked or flagged. Run ID: 98a9a543.
+Category winners determined by latency tiebreaker
+where pass rates are equal.
+Full methodology: [METHODOLOGY.md](METHODOLOGY.md)
 
 ---
 

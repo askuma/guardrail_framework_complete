@@ -194,7 +194,8 @@ class ComparisonReport:
     reports             backend.value → RedTeamReport for each backend.
     best_overall        backend.value with the highest overall pass_rate.
     worst_overall       backend.value with the lowest overall pass_rate.
-    category_winners    OWASP ref → backend.value that scored highest per category.
+    category_winners    OWASP ref → dict with winner, winner_score, winner_latency_ms,
+                        tied_backends, and tiebreaker key (see _compute_category_winners).
     summary_table       Flat list of dicts, one row per (backend × category),
                         ready for direct dashboard / table rendering.
     """
@@ -205,7 +206,7 @@ class ComparisonReport:
     reports: Dict[str, RedTeamReport]
     best_overall: str
     worst_overall: str
-    category_winners: Dict[str, str]
+    category_winners: Dict[str, Dict[str, Any]]
     summary_table: List[Dict[str, Any]]
     skipped_backends: Dict[str, str] = field(default_factory=dict)  # backend → reason
 
@@ -743,21 +744,41 @@ def _build_timeout_report(
 
 def _compute_category_winners(
     reports: Dict[str, RedTeamReport],
-) -> Dict[str, str]:
-    """For each OWASP ref, return the backend.value with the highest pass_rate."""
+) -> Dict[str, Dict[str, Any]]:
+    """For each OWASP ref, return winner info with tie-breaking by latency."""
     all_refs: Set[str] = set()
     for r in reports.values():
         all_refs.update(r.results_by_category)
 
-    winners: Dict[str, str] = {}
+    winners: Dict[str, Dict[str, Any]] = {}
     for ref in all_refs:
         candidates = [
-            (b, r.results_by_category[ref]["pass_rate"])
+            (b, r.results_by_category[ref]["pass_rate"], r.average_latency_ms or 0.0)
             for b, r in reports.items()
             if ref in r.results_by_category
         ]
-        if candidates:
-            winners[ref] = max(candidates, key=lambda t: t[1])[0]
+        if not candidates:
+            continue
+        best_score = max(c[1] for c in candidates)
+        tied = [(b, score, lat) for b, score, lat in candidates if score == best_score]
+        if len(tied) == 1:
+            winner_b, winner_score, winner_lat = tied[0]
+            winners[ref] = {
+                "winner": winner_b,
+                "winner_score": round(winner_score * 100, 1),
+                "winner_latency_ms": round(winner_lat),
+                "tied_backends": [winner_b],
+                "tiebreaker": None,
+            }
+        else:
+            winner_b, winner_score, winner_lat = min(tied, key=lambda t: t[2])
+            winners[ref] = {
+                "winner": winner_b,
+                "winner_score": round(winner_score * 100, 1),
+                "winner_latency_ms": round(winner_lat),
+                "tied_backends": [b for b, _, _ in tied],
+                "tiebreaker": "latency",
+            }
     return winners
 
 

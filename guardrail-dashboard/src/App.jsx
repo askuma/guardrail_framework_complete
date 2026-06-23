@@ -1497,12 +1497,17 @@ function RedTeamTab({ toast }) {
               {RT_OWASP.map(({ ref }) => {
                 const cell     = pivot[backend]?.[ref];
                 const cr       = cell?.pass_rate;
-                const isWinner = compareReport.category_winners?.[ref] === backend;
+                const winnerInfo = compareReport.category_winners?.[ref];
+                const isWinner   = winnerInfo?.winner === backend;
+                const isTied     = isWinner && winnerInfo?.tiebreaker === 'latency' && (winnerInfo?.tied_backends?.length ?? 0) > 1;
+                const tiedTip    = isTied
+                  ? `Tied with ${winnerInfo.tied_backends.filter(b => b !== backend).map(b => b.replace(/_/g,' ')).join(', ')}. ${backend.replace(/_/g,' ')} wins by latency at ${winnerInfo.winner_latency_ms} ms.`
+                  : undefined;
                 return (
                   <td key={ref} style={{ padding: '10px 6px', textAlign: 'center' }}>
                     {cr != null
-                      ? <span style={{ color: passColor(cr), fontWeight: isWinner ? 700 : 400, fontSize: 12 }}>
-                          {(cr * 100).toFixed(0)}%{isWinner ? ' ★' : ''}
+                      ? <span title={tiedTip} style={{ color: passColor(cr), fontWeight: isWinner ? 700 : 400, fontSize: 12, cursor: tiedTip ? 'help' : 'default' }}>
+                          {(cr * 100).toFixed(0)}%{isWinner ? (isTied ? ' ★*' : ' ★') : ''}
                         </span>
                       : <span style={{ color: C.border }} title="Category not tested — quota exhausted or credentials missing">—</span>
                     }

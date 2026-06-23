@@ -203,15 +203,31 @@ class ReportSigner:
         is_comparison = hasattr(report, "backends_tested")
         run_id = report.run_id
 
+        # Derive month/year from report timestamp
+        ts = report.timestamp
+        if isinstance(ts, str):
+            try:
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                ts = datetime.now(timezone.utc)
+        month_year = ts.strftime("%B %Y") if hasattr(ts, "strftime") else datetime.now(timezone.utc).strftime("%B %Y")
+
+        if is_comparison:
+            pdf_title = f"GuardrailProbe Independent Benchmark — {month_year}"
+        else:
+            _bval = report.backend.value if hasattr(report.backend, "value") else str(report.backend)
+            pdf_title = f"GuardrailProbe Security Report — {_bval.replace('_', ' ').title()} — {month_year}"
+
         doc = SimpleDocTemplate(
             str(path),
             pagesize=A4,
-            title=f"Red Team Report — {run_id}",
-            author="Guardrail Framework",
-            subject=f"run_id={run_id}",
-            keywords=f"run_id={run_id}",
+            title=pdf_title,
+            author="GuardrailProbe",
+            subject="Independent AI Guardrail Benchmark",
+            creator="guardrailprobe v0.1.0 — github.com/askuma/guardrailprobe",
+            keywords="AI safety, guardrails, OWASP LLM Top 10, benchmark",
             leftMargin=20 * mm, rightMargin=20 * mm,
-            topMargin=20 * mm, bottomMargin=20 * mm,
+            topMargin=20 * mm, bottomMargin=28 * mm,
         )
 
         styles = getSampleStyleSheet()
@@ -248,8 +264,7 @@ class ReportSigner:
         story: list = []
 
         # ── Title ──────────────────────────────────────────────────────────────
-        report_kind = "Backend Comparison" if is_comparison else "Single Backend"
-        story.append(Paragraph(f"Red Team Security Report ({report_kind})", H1))
+        story.append(Paragraph(pdf_title, H1))
         story.append(Spacer(1, 3 * mm))
 
         # ── Metadata block ─────────────────────────────────────────────────────
@@ -377,30 +392,90 @@ class ReportSigner:
             story.append(comp_tbl)
             story.append(Spacer(1, 4 * mm))
 
-            # Category winners
+            # Category winners (with tie footnotes)
             story.append(Paragraph("Category Winners", H2))
             winner_rows = [["OWASP Ref", "Category", "Winner Backend"]]
+            tie_footnotes: list = []
             for ref in sorted(report.category_winners.keys()):
-                winner_rows.append([
-                    ref,
-                    _OWASP_LABELS.get(ref, ref),
-                    str(report.category_winners[ref]).replace("_", " "),
-                ])
+                info = report.category_winners[ref]
+                winner_name = info["winner"].replace("_", " ")
+                if info.get("tiebreaker") == "latency" and len(info.get("tied_backends", [])) > 1:
+                    winner_rows.append([ref, _OWASP_LABELS.get(ref, ref), f"{winner_name}*"])
+                    tie_footnotes.append(
+                        f"* {ref}: Tiebreaker by latency — "
+                        f"{winner_name} ({info['winner_latency_ms']} ms) wins among: "
+                        + ", ".join(b.replace("_", " ") for b in info["tied_backends"])
+                    )
+                else:
+                    winner_rows.append([ref, _OWASP_LABELS.get(ref, ref), winner_name])
             winner_tbl = Table(winner_rows, colWidths=[16 * mm, 60 * mm, 60 * mm])
             winner_tbl.setStyle(TableStyle(_base_style(3)))
             story.append(winner_tbl)
+            if tie_footnotes:
+                story.append(Spacer(1, 2 * mm))
+                for note in tie_footnotes:
+                    story.append(Paragraph(note, BL))
 
-        # ── Footer ─────────────────────────────────────────────────────────────
-        story.append(Spacer(1, 10 * mm))
+        # ── Independence Statement ───────────────────────────────────────────────────────────────────
+        story.append(Spacer(1, 8 * mm))
+        story.append(Paragraph("Independence Statement", H2))
+        _independence_box = ParagraphStyle(
+            "independence_box",
+            parent=styles["Normal"],
+            fontSize=8,
+            leading=12,
+            leftIndent=6 * mm,
+            rightIndent=6 * mm,
+            spaceBefore=3 * mm,
+            spaceAfter=3 * mm,
+            backColor=colors.Color(0.94, 0.94, 0.94),
+            borderPadding=(4 * mm, 4 * mm, 4 * mm, 4 * mm),
+        )
+        story.append(Paragraph(
+            "GuardrailProbe is independently operated with no commercial relationship "
+            "to any tested backend provider. NVIDIA, Microsoft, OpenAI, Lakera, Meta, "
+            "Protect AI, and Amazon do not fund, endorse, or influence this project or "
+            "its methodology.<br/><br/>"
+            "Probe library, scoring logic, and methodology are fully open source and "
+            "independently auditable at: <b>github.com/askuma/guardrailprobe</b><br/><br/>"
+            "This report was generated using probe library v0.1.0 against the backends "
+            "listed above. Results reflect backend behavior at the time of testing with "
+            "default or minimal configuration unless otherwise noted.<br/><br/>"
+            "For methodology details see METHODOLOGY.md.",
+            _independence_box,
+        ))
+
+        # ── Signature footer ───────────────────────────────────────────────────────────────────
+        story.append(Spacer(1, 6 * mm))
         story.append(Paragraph(
             "This document is digitally signed with an electronic signature "
-            "and an RFC 3161 trusted timestamp. "
+            "and an RFC 3161 trusted timestamp. "
             "Verify the signature using any PDF viewer or via the "
-            f"GET /redteam/reports/{run_id}/export endpoint.",
+            f"GET /redteam/reports/{run_id}/export endpoint.",
             BL,
         ))
 
-        doc.build(story)
+        # ── Per-page footer callback ────────────────────────────────────────────────────────────
+        _footer_text = (
+            "GuardrailProbe — Independent AI Guardrail Benchmark — "
+            "github.com/askuma/guardrailprobe — Apache 2.0"
+        )
+        _footer_style = ParagraphStyle(
+            "page_footer",
+            parent=styles["Normal"],
+            fontSize=7,
+            textColor=colors.Color(0.5, 0.5, 0.5),
+            alignment=1,
+        )
+
+        def _draw_footer(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            p = Paragraph(_footer_text, _footer_style)
+            p.wrap(doc_obj.width, 10 * mm)
+            p.drawOn(canvas_obj, doc_obj.leftMargin, 8 * mm)
+            canvas_obj.restoreState()
+
+        doc.build(story, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
 
     # ── PDF signing (pyhanko) ─────────────────────────────────────────────────
 
