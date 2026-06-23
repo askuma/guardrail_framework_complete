@@ -3,7 +3,7 @@
 ## What you get
 
 A live React dashboard at `http://localhost:3000` that talks to the FastAPI
-backend at `http://localhost:8000`.  Nine tabs:
+backend at `http://localhost:8000`.  Ten tabs:
 
 | Tab | What it shows |
 |-----|--------------|
@@ -16,9 +16,28 @@ backend at `http://localhost:8000`.  Nine tabs:
 | 🚨 Alerts     | Active alerts, resolve button, auto-refreshes every 10 s |
 | 🔀 A/B Tests  | Create tests, simulate traffic assignment |
 | 📜 Audit Log  | Every guardrail check, searchable, sortable |
+| 🔴 Red Team   | Fire 78 OWASP LLM01–LLM10 probes across all 11 backends simultaneously; compare results side-by-side |
 
 The header shows a live ⚡ indicator whenever a policy-change event arrives over
 the Server-Sent Events stream (Gap 6) — the dashboard auto-refreshes on every change.
+
+### 🔴 Red Team tab — detailed features
+
+**Visual scan progress overlay** — while a run is active, a full-screen progress panel
+shows a live probe counter, current OWASP category, and per-backend pass/fail tally
+in real time.  The overlay dismisses automatically when all probes complete.
+
+**Comparison table** — results are grouped into two sections:
+- **General Purpose Guardrails** (NeMo, Lakera, GA Guard, Azure Content Safety, AWS Bedrock, LlamaFirewall, LLM Guard)
+- **Specialized Tools** (GuardrailsAI, Presidio, OpenAI Moderation, Azure Prompt Shields)
+
+Each row shows overall pass rate, per-OWASP-category (LLM01–LLM10) pass rates, and average
+latency. ★ marks the category winner; ⚠ flags backends where fewer than 50 % of probes ran.
+A footnote block explains each symbol (identical to the published GitHub Pages report).
+
+**Persistent run history** — each completed comparison run is saved in browser storage and
+listed in a collapsible panel below the live table.  You can re-open any past run to review
+its results without re-firing probes.
 
 ---
 

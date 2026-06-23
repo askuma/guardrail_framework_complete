@@ -4,6 +4,53 @@ All notable changes are documented here. Dates use ISO 8601 (YYYY-MM-DD).
 
 ---
 
+## [1.2.0] — 2026-06-20
+
+### Added
+
+**New Backends** (`core.py`)
+- `LlamaFirewallBackend` — Meta PromptGuard 2 via the `llamafirewall` SDK; fully local inference, no API key required
+- `LLMGuardBackend` — `llm_guard` PromptInjection + Toxicity scanners; fully local, no API key required
+- Both backends participate in the Red Team comparison table and are included in the June 2026 benchmark (85.9 % pass rate each)
+
+**Compiler** (`compiler.py`)
+- Registered all 11 backends in the `PolicyCompiler` dispatch table
+- Added `_compile_generic` fallback: unknown / `CUSTOM` backends now return a portable JSON policy envelope instead of raising `ValueError`
+
+**Public API** (`__init__.py`)
+- Rewritten to export all 11 backend symbols, full OPA gap surface, testing/bundle/decision_log helpers, and `initialize()` factory function
+
+**Dashboard**
+- Visual scan progress overlay — live probe counter and per-category status during an active Red Team run
+- Persistent run history — previous comparison runs stored and surfaced in the Red Team tab
+- Red Team comparison table now groups backends as **General Purpose Guardrails** vs **Specialized Tools** with distinct colour-coded headers
+- Footnote block added to comparison table explaining `—` cells, ★ category winners, and ⚠ low-coverage exclusion
+
+**GitHub Pages** (`.github/workflows/pages.yml`)
+- Removed `paths: docs/**` trigger filter — Pages deploy now fires on every push to `main`
+- `enablement: true` on `actions/configure-pages@v5` — auto-enables GitHub Pages with GitHub Actions source
+- Redesigned `docs/index.html` — light theme matching dashboard, General Purpose / Specialized grouping, live benchmark data, footnotes, archive table
+
+**Benchmark Report** (`docs/benchmarks/benchmark_2026_06.*`)
+- June 2026 benchmark: 78 probes × 11 backends; best overall OpenAI Moderation (100 %)
+
+### Changed
+
+- `examples.py` — updated multi-backend example to include `llama_firewall` and `llm_guard`
+- `requirements.txt` — removed stale/conflicting pins; added `llamafirewall`, `llm_guard` as optional extras
+- `docker-compose.yml` — pinned OTel collector image to avoid digest-change breakage
+
+### Fixed
+
+- `entrypoint.sh` — removed deprecated `ToxicLanguage` scanner reference that caused startup warnings
+- CI (`tests/test_compiler.py`) — renamed `test_unsupported_backend` to `test_custom_backend_generic_compile` and updated assertion to match `_compile_generic` return shape
+
+### Security
+
+- `core.py` — introduced `_BLOCKED_RULE_KEYS = frozenset({"api_key", "api_url", "colang_policy", "nemo_yaml"})` to prevent Colang DSL injection via policy `rules` dict
+
+---
+
 ## [1.1.0] — 2026-06-08
 
 ### Added

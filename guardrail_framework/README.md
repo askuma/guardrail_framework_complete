@@ -17,7 +17,7 @@
 
 ## Overview
 
-The Guardrail Framework Abstraction Layer provides a unified interface for deploying and managing AI safety guardrails across multiple backends (NVIDIA NeMo, GuardrailsAI, Microsoft Presidio, Lakera, GA Guard) without vendor lock-in.
+The Guardrail Framework Abstraction Layer provides a unified interface for deploying and managing AI safety guardrails across 11 backends (NVIDIA NeMo, GuardrailsAI, Microsoft Presidio, LlamaFirewall, LLM Guard, Lakera, GA Guard, OpenAI Moderation, Azure Content Safety, Azure Prompt Shields, AWS Bedrock) without vendor lock-in.
 
 ### Key Features
 
@@ -49,16 +49,14 @@ The Guardrail Framework Abstraction Layer provides a unified interface for deplo
                    │
         ┌──────────┼──────────┬────────────┐
         │          │          │            │
-   ┌────▼──┐ ┌────▼──┐ ┌────▼──┐ ┌──────▼─┐
-   │ NeMo  │ │Guardr-│ │Presidio│ │Lakera  │
-   │Rails  │ │ails   │ │(PII)   │ │Guard   │
-   └───────┘ └───────┘ └────────┘ └────────┘
-        │          │          │            │
-   Colang DSL   YAML      Config      REST API
-   (State       (Validators) (Redactors)  (Real-time)
-    Machine)
-        │          │          │            │
-        └──────────┴──────────┴────────────┘
+   ┌────▼──┐ ┌────▼──┐ ┌────▼──┐ ┌──────▼─┐ ┌──────▼──┐ ┌──────▼──┐
+   │ NeMo  │ │Guardr-│ │Presidio│ │Llama   │ │LLM     │ │Lakera / │
+   │Rails  │ │ailsAI │ │(PII)   │ │Firewall│ │Guard   │ │… cloud  │
+   └───────┘ └───────┘ └────────┘ └────────┘ └────────┘ └─────────┘
+        │          │          │         │           │           │
+   Colang DSL   YAML      Config   local inf.  local inf.  REST API
+        │          │          │         │           │           │
+        └──────────┴──────────┴─────────┴───────────┴───────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
 │     ObservabilityStack                      │
@@ -183,6 +181,8 @@ A **policy** defines what guardrails to apply. It includes:
 | **NeMo** | State machines, conversational flows | Multi-turn dialogue guardrails |
 | **GuardrailsAI** | Composable validators, structured output | Flexible, custom risk checks |
 | **Presidio** | PII detection, enterprise-grade | Data privacy, compliance |
+| **LlamaFirewall** | Meta PromptGuard 2; fully local, no API key | Air-gapped or cost-sensitive deployments |
+| **LLM Guard** | PromptInjection + Toxicity; fully local, no API key | Self-hosted inference environments |
 | **Lakera** | Real-time, ultra-low latency | High-throughput production |
 | **GA Guard** | Adversarial robustness | Adversarial attack detection |
 

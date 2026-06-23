@@ -5,13 +5,14 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![PyPI version](https://img.shields.io/badge/PyPI-v0.1.0-orange.svg)](https://pypi.org/project/guardrailprobe/)
 [![Probes](https://img.shields.io/badge/Probes-78-green.svg)](guardrail_framework/probes.py)
+[![Backends](https://img.shields.io/badge/Backends-11-blue.svg)](guardrail_framework/core.py)
 
 ---
 
 ## What it does
 
 - **Fires 78 adversarial probes** — 58 OWASP LLM01–LLM10 attack probes + 20 content moderation probes (CM-001–CM-020 for hate speech, violence, sexual content, self-harm) — directly at your guardrail middleware, not the model
-- **Compares multiple backends side-by-side** in a single run: NeMo Guardrails, GuardrailsAI, Presidio, Lakera Guard, GA Guard, OpenAI Moderation, Azure Content Safety, Azure Prompt Shields, AWS Bedrock Guardrails
+- **Compares 11 backends side-by-side** in a single run: NeMo Guardrails, GuardrailsAI, Presidio, Lakera Guard, GA Guard, OpenAI Moderation, Azure Content Safety, Azure Prompt Shields, AWS Bedrock Guardrails, LlamaFirewall, LLM Guard
 - **Exports cryptographically signed PDF reports** (PKCS#12 + RFC 3161 timestamp) that you can submit to auditors or attach to EU AI Act compliance documentation
 
 ---
@@ -62,27 +63,32 @@ runner = RedTeamRunner()
 # Run all 78 probes against all configured backends
 report = runner.compare_backends(
     backends=[
-        "nemo", "guardrails_ai", "presidio",
-        "lakera", "ga_guard", "openai_moderation",
+        # Local / no credentials
+        "presidio", "guardrails_ai", "llama_firewall", "llm_guard",
+        # OPENAI_API_KEY
+        "nemo", "openai_moderation",
+        # Cloud credentials
+        "lakera", "ga_guard",
         "azure_content_safety", "azure_prompt_shields", "aws_bedrock",
     ],
 )
 
 print(f"Best overall:  {report.best_overall}")   # openai_moderation
-print(f"Worst overall: {report.worst_overall}")  # presidio
+print(f"Worst overall: {report.worst_overall}")  # guardrails_ai
 
 # ┌─────────────────────────┬───────────┐
 # │ backend                 │  overall  │
 # ├─────────────────────────┼───────────┤
 # │ openai_moderation       │  100.0 %  │
+# │ nemo                    │   85.9 %  │
+# │ llama_firewall          │   85.9 %  │
+# │ llm_guard               │   85.9 %  │
 # │ lakera                  │   83.3 %  │
 # │ aws_bedrock             │   59.0 %  │
-# │ azure_content_safety    │   26.9 %  │
+# │ azure_content_safety    │   25.6 %  │
 # │ azure_prompt_shields    │   24.4 %  │
-# │ nemo                    │    9.0 %  │
-# │ guardrails_ai           │    9.0 %  │
-# │ ga_guard                │    9.0 %  │
 # │ presidio                │    6.4 %  │
+# │ guardrails_ai           │    2.6 %  │
 # └─────────────────────────┴───────────┘
 ```
 
@@ -109,6 +115,8 @@ guardrailprobe scan --backend guardrails_ai --categories LLM01,LLM04,LLM06
 | NeMo Guardrails        | `nemoguardrails`    | Colang-based rail config auto-compiled from policy            |
 | GuardrailsAI           | `guardrails-ai`     | YAML rail config auto-compiled from policy                    |
 | Microsoft Presidio     | `presidio-analyzer` | PII detection; falls back to regex if SDK absent              |
+| LlamaFirewall          | `llamafirewall`     | Meta PromptGuard 2; fully local, no API key required          |
+| LLM Guard              | `llm_guard`         | PromptInjection + Toxicity scanners; fully local, no API key  |
 | Lakera Guard           | _(REST API)_        | Requires `LAKERA_GUARD_API_KEY`                               |
 | GA Guard               | _(REST API)_        | Requires `GA_GUARD_API_URL` + `GA_GUARD_API_KEY`              |
 | OpenAI Moderation      | _(REST API)_        | Requires `OPENAI_API_KEY`                                     |
@@ -122,21 +130,22 @@ All backends degrade gracefully to regex/keyword heuristics when the SDK is not 
 
 ## Benchmark results
 
-Latest run: **June 2026** — 78 probes × 9 backends ([live dashboard](https://askuma.github.io/guardrailprobe/) · [full report](docs/benchmarks/benchmark_2026_06.json))
+Latest run: **June 2026** — 78 probes × 11 backends ([live dashboard](https://askuma.github.io/guardrailprobe/) · [full report](docs/benchmarks/benchmark_2026_06.json))
 
-| Backend                | Pass rate | Notes                          |
-| ---------------------- | :-------: | ------------------------------ |
-| OpenAI Moderation      |  100.0 %  | Best overall                   |
-| Lakera Guard           |  83.3 %   |                                |
-| AWS Bedrock Guardrails |  59.0 %   |                                |
-| Azure Content Safety   |  26.9 %   |                                |
-| Azure Prompt Shields   |  24.4 %   |                                |
-| NeMo Guardrails        |   9.0 %   | Colang policy needed per probe |
-| GuardrailsAI           |   9.0 %   | YAML rail config needed        |
-| GA Guard               |   9.0 %   |                                |
-| Microsoft Presidio     |   6.4 %   | PII-focused; weak on LLM01+    |
+| Backend                | Pass rate | Notes                                          |
+| ---------------------- | :-------: | ---------------------------------------------- |
+| OpenAI Moderation      |  100.0 %  | Best overall                                   |
+| NeMo Guardrails        |  85.9 %   |                                                |
+| LlamaFirewall          |  85.9 %   | Meta PromptGuard 2; fully local                |
+| LLM Guard              |  85.9 %   | Local PromptInjection + Toxicity scanners      |
+| Lakera Guard           |  83.3 %   |                                                |
+| AWS Bedrock Guardrails |  59.0 %   |                                                |
+| Azure Content Safety   |  25.6 %   |                                                |
+| Azure Prompt Shields   |  24.4 %   |                                                |
+| Microsoft Presidio     |   6.4 %   | PII-focused; weak on LLM01+                    |
+| GuardrailsAI           |   2.6 %   | YAML rail config needed for full coverage      |
 
-Pass rate = fraction of adversarial probes blocked or flagged by the backend. Higher is better. Results vary based on policy configuration — the low scores for rule-engine backends (NeMo, GuardrailsAI, Presidio) reflect default/minimal policy configs, not inherent backend limits.
+Pass rate = fraction of adversarial probes blocked or flagged by the backend. Higher is better. Results vary based on policy configuration — low scores for rule-engine backends (NeMo, GuardrailsAI, Presidio) reflect default/minimal policy configs, not inherent backend limits.
 
 ---
 
@@ -157,7 +166,7 @@ guardrail_framework/
   probes.py           — 78 built-in AttackProbe objects (58 OWASP LLM01–LLM10 + 20 CM probes)
   red_team_runner.py  — RedTeamRunner, ProbeResult, RedTeamReport, ComparisonReport
   report_signer.py    — PDF generation + PKCS#12 signing + RFC 3161 timestamp
-  core.py             — GuardrailFramework, all backend adapters, policy engine
+  core.py             — GuardrailFramework, 11 backend adapters (incl. LlamaFirewall, LLM Guard), policy engine
   server.py           — FastAPI app, 55+ REST endpoints
   compiler.py         — Policy → Colang / YAML / Presidio config compiler
 ```
