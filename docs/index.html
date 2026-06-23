@@ -11,30 +11,45 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #f8fafc;
-      --card:     #ffffff;
-      --border:   #e2e8f0;
-      --text:     #0f172a;
-      --sub:      #475569;
-      --muted:    #64748b;
-      --blue:     #1d4ed8;
-      --blue-lt:  #3b82f6;
-      --green:    #059669;
-      --amber:    #d97706;
-      --red:      #dc2626;
-      --purple:   #7c3aed;
-      --surface:  #f1f5f9;
+      /* Dark glass palette */
+      --bg:        #060d1f;
+      --text:      #eef2ff;
+      --sub:       rgba(238,242,255,0.6);
+      --muted:     rgba(238,242,255,0.35);
+      --blue:      #60a5fa;
+      --blue-lt:   #93c5fd;
+      --green:     #34d399;
+      --amber:     #fbbf24;
+      --red:       #f87171;
+      --purple:    #a78bfa;
+      --surface:   rgba(255,255,255,0.04);
+      --glass:     rgba(255,255,255,0.06);
+      --glass-hov: rgba(255,255,255,0.1);
+      --glass-bdr: rgba(255,255,255,0.11);
+      --blur:      18px;
       --font-sans: 'Fira Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       --font-mono: 'Fira Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
     }
 
     html { font-size: 16px; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); line-height: 1.6; }
+    body {
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(ellipse 900px 700px at 10% 20%, rgba(59,130,246,0.2) 0%, transparent 65%),
+        radial-gradient(ellipse 700px 600px at 88% 80%, rgba(124,58,237,0.18) 0%, transparent 65%),
+        radial-gradient(ellipse 550px 450px at 60% 5%,  rgba(16,185,129,0.1) 0%, transparent 60%),
+        radial-gradient(ellipse 400px 350px at 30% 90%, rgba(245,158,11,0.07) 0%, transparent 60%);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
 
-    a { color: var(--blue-lt); text-decoration: none; transition: color 0.15s ease; }
-    a:hover { color: var(--blue); text-decoration: underline; }
+    a { color: var(--blue); text-decoration: none; transition: color 0.15s ease; }
+    a:hover { color: var(--blue-lt); text-decoration: underline; }
 
-    :focus-visible { outline: 2px solid var(--blue-lt); outline-offset: 3px; border-radius: 3px; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 3px; }
     :focus:not(:focus-visible) { outline: none; }
 
     @media (prefers-reduced-motion: reduce) {
@@ -46,20 +61,17 @@
     @media (min-width: 640px) { .container { padding: 0 32px; } }
     @media (min-width: 1024px) { .container { padding: 0 48px; } }
 
-    /* ── CSS for nav dark colors ── */
-    :root {
-      --nav:      #0f172a;
-      --nav-bdr:  #1e293b;
-      --nav-text: #f0f4ff;
-      --nav-muted: #64748b;
-    }
-
-    /* ── Top header bar ── */
+    /* ── Sticky glass topbar ── */
     .topbar {
-      background: linear-gradient(135deg, var(--nav) 0%, #111827 100%);
-      border-bottom: 1px solid var(--nav-bdr);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(6,13,31,0.72);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
       padding: 14px 0;
-      box-shadow: 0 2px 20px rgba(0,0,0,0.25);
+      box-shadow: 0 4px 40px rgba(0,0,0,0.4);
     }
     .topbar-inner {
       display: flex;
@@ -70,71 +82,111 @@
     }
     .topbar-brand { display: flex; align-items: center; gap: 14px; }
     .topbar-logo {
-      width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
-      background: linear-gradient(135deg, var(--blue-lt), var(--blue));
+      width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+      background: linear-gradient(135deg, #60a5fa, #3b82f6);
       display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 18px rgba(59,130,246,0.45);
+      box-shadow: 0 0 24px rgba(96,165,250,0.55), inset 0 1px 0 rgba(255,255,255,0.25);
     }
     .topbar h1 {
       font-family: var(--font-mono);
       font-size: 18px;
       font-weight: 700;
-      color: var(--nav-text);
+      color: #eef2ff;
       margin: 0;
       letter-spacing: -0.01em;
     }
-    .topbar .subtitle { font-size: 11px; color: var(--nav-muted); margin-top: 3px; letter-spacing: 0.02em; }
+    .topbar .subtitle {
+      font-size: 11px;
+      color: rgba(238,242,255,0.38);
+      margin-top: 2px;
+      letter-spacing: 0.03em;
+    }
     .topbar-links { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
     .topbar-links a {
       font-size: 12px;
-      color: var(--nav-muted);
+      color: rgba(238,242,255,0.42);
       padding: 4px 2px;
       cursor: pointer;
       transition: color 0.15s ease;
       font-weight: 500;
     }
-    .topbar-links a:hover { color: var(--blue-lt); text-decoration: none; }
+    .topbar-links a:hover { color: var(--blue); text-decoration: none; }
 
     /* ── Content area ── */
-    .content { padding: 28px 0 64px; }
+    .content { padding: 32px 0 80px; }
 
-    /* ── Stat cards ── */
+    /* ── Stat cards — glass with glow ── */
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
       gap: 16px;
       margin-bottom: 28px;
     }
     .stat-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-left: 3px solid var(--accent, var(--blue-lt));
-      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 6px 24px rgba(0,0,0,.04);
-      border-radius: 10px;
-      padding: 18px 20px;
+      background: var(--glass);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      border: 1px solid var(--glass-bdr);
+      border-radius: 16px;
+      padding: 20px 22px;
       position: relative;
       overflow: hidden;
+      transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.2), 0 0 40px var(--glow, rgba(96,165,250,0.12));
     }
+    .stat-card:hover {
+      transform: translateY(-3px);
+      background: var(--glass-hov);
+      box-shadow: 0 8px 48px rgba(0,0,0,0.35), 0 0 60px var(--glow, rgba(96,165,250,0.2));
+    }
+    /* Top accent line */
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent, var(--blue));
+      border-radius: 16px 16px 0 0;
+    }
+    /* Soft glow orb */
     .stat-card::after {
       content: '';
       position: absolute;
-      right: 12px; top: 12px;
-      width: 28px; height: 28px;
-      background: var(--accent, var(--blue-lt));
-      opacity: 0.12;
-      border-radius: 7px;
+      right: -10px; top: -10px;
+      width: 80px; height: 80px;
+      background: radial-gradient(circle, var(--accent, var(--blue)) 0%, transparent 70%);
+      opacity: 0.18;
     }
-    .stat-card .stat-label  { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sub); margin-bottom: 8px; }
-    .stat-card .stat-value  { font-family: var(--font-mono); font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-    .stat-card .stat-sub    { font-size: 12px; color: var(--muted); }
+    .stat-card .stat-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(238,242,255,0.42);
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+    }
+    .stat-card .stat-value {
+      font-family: var(--font-mono);
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 5px;
+      line-height: 1;
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 0 8px currentColor);
+    }
+    .stat-card .stat-sub { font-size: 11px; color: rgba(238,242,255,0.32); position: relative; z-index: 1; }
 
-    /* ── Card ── */
+    /* ── Generic glass card ── */
     .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 6px 24px rgba(0,0,0,.04);
-      border-radius: 10px;
-      padding: 20px;
+      background: var(--glass);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      border: 1px solid var(--glass-bdr);
+      border-radius: 16px;
+      padding: 22px;
       margin-bottom: 20px;
     }
 
@@ -143,9 +195,16 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
-    .section-head h2 { font-family: var(--font-mono); font-size: 17px; font-weight: 600; color: var(--text); }
+    .section-head h2 {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(238,242,255,0.45);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
 
     /* ── Card title ── */
     .card-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
@@ -154,53 +213,62 @@
     .badge {
       display: inline-block;
       padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 500;
+      border-radius: 5px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      border: 1px solid;
     }
 
-    /* ── Table ── */
+    /* ── Benchmark table ── */
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    thead tr { border-bottom: 1px solid var(--border); }
+    thead tr { border-bottom: 1px solid rgba(255,255,255,0.08); }
     th {
       text-align: left;
-      padding: 8px 12px;
-      color: var(--sub);
-      font-weight: 600;
-      font-size: 11px;
-      letter-spacing: 0.03em;
+      padding: 9px 12px;
+      color: rgba(238,242,255,0.38);
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
     }
     th.center, td.center { text-align: center; }
     th.right,  td.right  { text-align: right; }
-    td { padding: 10px 12px; border-bottom: 1px solid rgba(226,232,240,0.5); vertical-align: middle; }
-    tbody tr:not(.group-hdr):hover { background: rgba(241,245,249,0.8); }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      vertical-align: middle;
+      color: rgba(238,242,255,0.82);
+    }
+    tbody tr:not(.group-hdr):hover { background: rgba(255,255,255,0.05); }
 
     /* ── Group header row ── */
     .group-hdr td {
-      padding: 8px 12px 4px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .06em;
+      padding: 10px 12px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
     }
 
-    /* ── Footnotes box ── */
+    /* ── Footnotes ── */
     .footnotes {
-      margin-top: 12px;
-      padding: 10px 12px;
-      background: rgba(226,232,240,0.35);
-      border-radius: 6px;
+      margin-top: 14px;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
       font-size: 11px;
-      color: var(--muted);
-      line-height: 1.7;
+      color: rgba(238,242,255,0.38);
+      line-height: 1.75;
     }
-    .footnotes strong { color: var(--sub); }
+    .footnotes strong { color: rgba(238,242,255,0.58); }
     .footnotes ul { margin: 4px 0 0; padding-left: 16px; }
 
-    /* ── Dl buttons ── */
+    /* ── Download bar ── */
     .dl-bar {
       display: flex;
       align-items: center;
@@ -208,25 +276,36 @@
       flex-wrap: wrap;
       margin-bottom: 20px;
       padding: 14px 20px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+      background: var(--glass);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      border: 1px solid var(--glass-bdr);
+      border-radius: 14px;
     }
-    .dl-bar .dl-label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .dl-bar .dl-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(238,242,255,0.65);
+      letter-spacing: 0.02em;
+    }
     .dl-btn {
       font-family: var(--font-sans);
       font-size: 12px;
-      color: var(--blue-lt);
-      padding: 5px 12px;
-      border: 1px solid var(--blue-lt);
-      border-radius: 5px;
+      color: var(--blue);
+      padding: 5px 14px;
+      border: 1px solid rgba(96,165,250,0.3);
+      border-radius: 7px;
       font-weight: 500;
-      background: transparent;
+      background: rgba(96,165,250,0.08);
       cursor: pointer;
-      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .dl-btn:hover { background: rgba(59,130,246,.1); color: var(--blue); border-color: var(--blue); text-decoration: none; }
+    .dl-btn:hover {
+      background: rgba(96,165,250,0.18);
+      border-color: rgba(96,165,250,0.55);
+      box-shadow: 0 0 16px rgba(96,165,250,0.25);
+      text-decoration: none;
+    }
 
     /* ── Archive table ── */
     .archive-winner { color: var(--green); font-weight: 500; }
@@ -234,29 +313,36 @@
 
     /* ── Code block ── */
     pre {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 14px 16px;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 16px 18px;
       overflow-x: auto;
       font-size: 12px;
-      color: var(--text);
-      line-height: 1.6;
+      color: rgba(238,242,255,0.68);
+      line-height: 1.7;
       font-family: var(--font-mono);
     }
 
     /* ── Footer ── */
     footer {
-      border-top: 1px solid var(--border);
+      border-top: 1px solid rgba(255,255,255,0.07);
       margin-top: 32px;
       padding: 24px 0;
       font-size: 12px;
-      color: var(--muted);
+      color: rgba(238,242,255,0.28);
     }
     footer p + p { margin-top: 4px; }
+    footer a { color: rgba(238,242,255,0.36); }
+    footer a:hover { color: var(--blue); text-decoration: none; }
 
     /* ── Loading / empty ── */
-    .placeholder { color: var(--muted); font-size: 13px; padding: 32px; text-align: center; }
+    .placeholder {
+      color: rgba(238,242,255,0.28);
+      font-size: 13px;
+      padding: 40px;
+      text-align: center;
+    }
 
     /* ── Responsive ── */
     @media (max-width: 640px) {
@@ -293,10 +379,10 @@
 
   <!-- ── KPI cards ── -->
   <div class="stat-grid" id="kpi-row">
-    <div class="stat-card" style="--accent:var(--green)"><p class="stat-label">Best Overall</p><p class="stat-value" id="kpi-best" style="color:var(--green)">—</p><p class="stat-sub" id="kpi-best-rate">—</p></div>
-    <div class="stat-card" style="--accent:var(--blue-lt)"><p class="stat-label">Backends Tested</p><p class="stat-value" id="kpi-backends" style="color:var(--blue-lt)">—</p><p class="stat-sub">this run</p></div>
-    <div class="stat-card" style="--accent:var(--purple)"><p class="stat-label">Probes Fired</p><p class="stat-value" id="kpi-probes" style="color:var(--purple)">—</p><p class="stat-sub">OWASP LLM Top 10</p></div>
-    <div class="stat-card" style="--accent:var(--amber)"><p class="stat-label">Report Period</p><p class="stat-value" id="kpi-period" style="color:var(--sub); font-size:20px; font-family:var(--font-mono)">—</p><p class="stat-sub" id="kpi-updated">—</p></div>
+    <div class="stat-card" style="--accent:#34d399;--glow:rgba(52,211,153,0.18)"><p class="stat-label">Best Overall</p><p class="stat-value" id="kpi-best" style="color:#34d399">—</p><p class="stat-sub" id="kpi-best-rate">—</p></div>
+    <div class="stat-card" style="--accent:#60a5fa;--glow:rgba(96,165,250,0.18)"><p class="stat-label">Backends Tested</p><p class="stat-value" id="kpi-backends" style="color:#60a5fa">—</p><p class="stat-sub">this run</p></div>
+    <div class="stat-card" style="--accent:#a78bfa;--glow:rgba(167,139,250,0.18)"><p class="stat-label">Probes Fired</p><p class="stat-value" id="kpi-probes" style="color:#a78bfa">—</p><p class="stat-sub">OWASP LLM Top 10</p></div>
+    <div class="stat-card" style="--accent:#fbbf24;--glow:rgba(251,191,36,0.18)"><p class="stat-label">Report Period</p><p class="stat-value" id="kpi-period" style="color:#fbbf24;font-size:20px;font-family:var(--font-mono)">—</p><p class="stat-sub" id="kpi-updated">—</p></div>
   </div>
 
   <!-- ── Downloads ── -->

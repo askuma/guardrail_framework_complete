@@ -6,28 +6,28 @@ import {
 } from 'recharts';
 import { api } from './api';
 
-// ─── Colour palette ──────────────────────────────────────────────────────────
+// ─── Colour palette (dark glass) ─────────────────────────────────────────────
 const C = {
-  // Content area (light)
-  bg:       '#f8fafc',
-  card:     '#ffffff',
-  border:   '#e2e8f0',
-  muted:    '#64748b',
-  sub:      '#475569',
-  text:     '#0f172a',
-  blue:     '#3b82f6',
-  blueDk:   '#1d4ed8',
-  green:    '#059669',
-  amber:    '#d97706',
-  red:      '#dc2626',
-  purple:   '#7c3aed',
-  surface:  '#f1f5f9',
-  // Navigation / header (dark)
-  nav:      '#0f172a',
-  navCard:  '#1e293b',
-  navBdr:   '#334155',
-  navText:  '#f0f4ff',
-  navMuted: '#64748b',
+  bg:       'transparent',
+  card:     'rgba(255,255,255,0.06)',
+  cardHov:  'rgba(255,255,255,0.1)',
+  border:   'rgba(255,255,255,0.11)',
+  muted:    'rgba(238,242,255,0.35)',
+  sub:      'rgba(238,242,255,0.58)',
+  text:     '#eef2ff',
+  blue:     '#60a5fa',
+  blueDk:   '#3b82f6',
+  green:    '#34d399',
+  amber:    '#fbbf24',
+  red:      '#f87171',
+  purple:   '#a78bfa',
+  surface:  'rgba(0,0,0,0.3)',
+  // Navigation uses same glass
+  nav:      'rgba(6,13,31,0.72)',
+  navCard:  'rgba(255,255,255,0.04)',
+  navBdr:   'rgba(255,255,255,0.08)',
+  navText:  '#eef2ff',
+  navMuted: 'rgba(238,242,255,0.4)',
 };
 
 // ─── Typography ───────────────────────────────────────────────────────────────
@@ -44,13 +44,19 @@ const Badge = ({ children, color = C.green }) => (
   }}>{children}</span>
 );
 
+const GLASS = {
+  background: C.card,
+  backdropFilter: 'blur(18px)',
+  WebkitBackdropFilter: 'blur(18px)',
+  border: `1px solid ${C.border}`,
+  borderRadius: 14,
+};
+
 const Card = ({ children, style }) => (
   <div style={{
-    backgroundColor: C.card,
-    border: `1px solid ${C.border}`,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 6px 24px rgba(0,0,0,0.04)',
-    borderRadius: 10,
+    ...GLASS,
     padding: 20,
+    boxShadow: '0 4px 32px rgba(0,0,0,0.25)',
     ...style,
   }}>{children}</div>
 );
@@ -59,16 +65,16 @@ const Btn = ({ children, onClick, variant = 'ghost', disabled }) => {
   const [hov, setHov] = React.useState(false);
   const defs = {
     primary: {
-      base:  { backgroundColor: C.blue, color: '#fff', border: 'none', boxShadow: `0 2px 8px ${C.blue}44` },
-      hover: { backgroundColor: C.blueDk, boxShadow: `0 4px 14px ${C.blue}55` },
+      base:  { background: `linear-gradient(135deg, ${C.blue}, ${C.blueDk})`, color: '#fff', border: `1px solid rgba(96,165,250,0.3)`, boxShadow: `0 0 20px rgba(96,165,250,0.3)` },
+      hover: { boxShadow: `0 0 32px rgba(96,165,250,0.5)`, filter: 'brightness(1.1)' },
     },
     danger:  {
-      base:  { backgroundColor: C.red + '14', color: C.red, border: `1px solid ${C.red}55` },
-      hover: { backgroundColor: C.red + '24', borderColor: C.red + '88' },
+      base:  { background: 'rgba(248,113,113,0.1)', color: C.red, border: `1px solid rgba(248,113,113,0.3)` },
+      hover: { background: 'rgba(248,113,113,0.2)', borderColor: 'rgba(248,113,113,0.55)', boxShadow: '0 0 16px rgba(248,113,113,0.2)' },
     },
     ghost:   {
-      base:  { backgroundColor: 'transparent', color: C.sub, border: `1px solid ${C.border}` },
-      hover: { backgroundColor: C.surface, borderColor: '#cbd5e1', color: C.text },
+      base:  { background: 'rgba(255,255,255,0.07)', color: C.sub, border: `1px solid ${C.border}` },
+      hover: { background: 'rgba(255,255,255,0.13)', color: C.text, borderColor: 'rgba(255,255,255,0.2)' },
     },
   };
   const { base, hover } = defs[variant] || defs.ghost;
@@ -79,11 +85,13 @@ const Btn = ({ children, onClick, variant = 'ghost', disabled }) => {
       onMouseEnter={() => !disabled && setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        padding: '7px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500,
+        padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
         fontFamily: FONT_SANS, letterSpacing: '0.01em',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
-        transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        transition: 'background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease',
         ...base,
         ...(hov && !disabled ? hover : {}),
       }}
@@ -93,14 +101,16 @@ const Btn = ({ children, onClick, variant = 'ghost', disabled }) => {
 
 const Input = ({ label, ...props }) => (
   <label style={{ display: 'block', marginBottom: 12 }}>
-    <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.sub, display: 'block', marginBottom: 5 }}>{label}</span>
+    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.muted, display: 'block', marginBottom: 5 }}>{label}</span>
     <input {...props} style={{
-      width: '100%', padding: '9px 12px', borderRadius: 7,
-      border: `1px solid ${C.border}`, backgroundColor: C.bg,
+      width: '100%', padding: '9px 12px', borderRadius: 8,
+      border: `1px solid ${C.border}`,
+      background: 'rgba(0,0,0,0.25)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
       color: C.text, fontSize: 13, outline: 'none', fontFamily: FONT_SANS,
       transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
     }}
-    onFocus={e => { e.target.style.borderColor = C.blue; e.target.style.boxShadow = `0 0 0 3px ${C.blue}22`; }}
+    onFocus={e => { e.target.style.borderColor = C.blue; e.target.style.boxShadow = `0 0 0 3px ${C.blue}30`; }}
     onBlur={e =>  { e.target.style.borderColor = C.border; e.target.style.boxShadow = 'none'; }}
     />
   </label>
@@ -108,44 +118,51 @@ const Input = ({ label, ...props }) => (
 
 const Select = ({ label, children, ...props }) => (
   <label style={{ display: 'block', marginBottom: 12 }}>
-    <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: C.sub, display: 'block', marginBottom: 5 }}>{label}</span>
+    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.muted, display: 'block', marginBottom: 5 }}>{label}</span>
     <select {...props} style={{
-      width: '100%', padding: '9px 12px', borderRadius: 7,
-      border: `1px solid ${C.border}`, backgroundColor: C.bg,
+      width: '100%', padding: '9px 12px', borderRadius: 8,
+      border: `1px solid ${C.border}`,
+      background: 'rgba(0,0,0,0.3)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
       color: C.text, fontSize: 13, outline: 'none', fontFamily: FONT_SANS,
       transition: 'border-color 0.15s ease',
     }}>{children}</select>
   </label>
 );
 
-// ─── Stat card ───────────────────────────────────────────────────────────────
-const StatCard = ({ label, value, sub, color = C.blue }) => (
-  <div style={{
-    backgroundColor: C.card,
-    border: `1px solid ${C.border}`,
-    borderLeft: `3px solid ${color}`,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 6px 24px rgba(0,0,0,0.04)',
-    borderRadius: 10,
-    padding: '18px 20px',
-    position: 'relative',
-    overflow: 'hidden',
-  }}>
-    <div style={{
-      position: 'absolute', right: 14, top: 14,
-      width: 32, height: 32, borderRadius: 8,
-      backgroundColor: color + '18',
-    }} />
-    <p style={{
-      fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-      color: C.sub, margin: '0 0 10px',
-    }}>{label}</p>
-    <p style={{
-      fontFamily: FONT_MONO, fontSize: 28, fontWeight: 700,
-      color, margin: '0 0 5px', lineHeight: 1,
-    }}>{value ?? '—'}</p>
-    {sub && <p style={{ fontSize: 11, color: C.muted, margin: 0 }}>{sub}</p>}
-  </div>
-);
+// ─── Stat card (glass with glow) ─────────────────────────────────────────────
+const StatCard = ({ label, value, sub, color = C.blue }) => {
+  const [hov, setHov] = React.useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        ...GLASS,
+        padding: '20px 22px',
+        position: 'relative',
+        overflow: 'hidden',
+        background: hov ? C.cardHov : C.card,
+        boxShadow: `0 4px 32px rgba(0,0,0,0.25), 0 0 40px ${color}25`,
+        transform: hov ? 'translateY(-2px)' : 'none',
+        transition: 'transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease',
+      }}
+    >
+      {/* Top accent line */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: color, borderRadius: '14px 14px 0 0' }} />
+      {/* Glow orb */}
+      <div style={{
+        position: 'absolute', right: -10, top: -10,
+        width: 80, height: 80,
+        background: `radial-gradient(circle, ${color} 0%, transparent 70%)`,
+        opacity: 0.18, pointerEvents: 'none',
+      }} />
+      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, margin: '0 0 10px', position: 'relative' }}>{label}</p>
+      <p style={{ fontFamily: FONT_MONO, fontSize: 28, fontWeight: 700, color, margin: '0 0 5px', lineHeight: 1, position: 'relative', filter: `drop-shadow(0 0 8px ${color})` }}>{value ?? '—'}</p>
+      {sub && <p style={{ fontSize: 11, color: C.muted, margin: 0, position: 'relative' }}>{sub}</p>}
+    </div>
+  );
+};
 
 // ─── Section header ──────────────────────────────────────────────────────────
 const SectionHead = ({ title, action }) => (
@@ -1808,13 +1825,16 @@ export default function App() {
   }, [loadGlobal]);
 
   return (
-    <div style={{ backgroundColor: C.bg, color: C.text, minHeight: '100vh', fontFamily: FONT_SANS }}>
-      {/* Header — dark premium bar */}
+    <div style={{ color: C.text, minHeight: '100vh', fontFamily: FONT_SANS }}>
+      {/* Header — sticky glass bar */}
       <div style={{
-        background: `linear-gradient(135deg, ${C.nav} 0%, #111827 100%)`,
+        position: 'sticky', top: 0, zIndex: 50,
+        background: C.nav,
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
         borderBottom: `1px solid ${C.navBdr}`,
         padding: '14px 32px',
-        boxShadow: '0 2px 20px rgba(0,0,0,0.25)',
+        boxShadow: '0 4px 40px rgba(0,0,0,0.4)',
       }}>
         <div style={{ maxWidth: 1300, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1865,9 +1885,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tab bar — dark, underline active style */}
+      {/* Tab bar — glass underline style */}
       <div style={{
-        backgroundColor: C.navCard,
+        background: C.navCard,
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         borderBottom: `1px solid ${C.navBdr}`,
         display: 'flex', gap: 0, padding: '0 32px', overflowX: 'auto',
       }}>
@@ -1885,7 +1907,7 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '28px 24px' }}>
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '28px 24px 80px' }}>
         {tab === 'overview' && <OverviewTab metrics={metrics} dashboard={dashboard} health={health} />}
         {tab === 'checker'  && <CheckerTab  toast={showToast} />}
         {tab === 'policies' && <PoliciesTab toast={showToast} />}
