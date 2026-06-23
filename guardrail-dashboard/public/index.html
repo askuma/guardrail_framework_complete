@@ -4,9 +4,33 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Guardrail Control Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      html { font-size: 16px; }
+      body {
+        background: #0f172a; /* Dark header color prevents flash on load */
+        font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        line-height: 1.6;
+      }
+
+      /* Focus ring for keyboard navigation */
+      :focus-visible { outline: 2px solid #3b82f6; outline-offset: 3px; border-radius: 3px; }
+      :focus:not(:focus-visible) { outline: none; }
+
+      /* Respect motion preferences */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { transition: none !important; animation: none !important; }
+      }
+
+      /* Table row hover — applies to rows without inline backgroundColor */
+      table tbody tr { transition: background-color 0.15s ease; }
+      table tbody tr:hover { background-color: rgba(241, 245, 249, 0.85); }
+
+      /* Base button/link transitions */
+      button, a { transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease; }
     </style>
   </head>
   <body>
