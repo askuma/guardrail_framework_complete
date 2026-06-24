@@ -409,7 +409,7 @@ GuardTest is designed to provide **continuous, automated evidence** that supplem
 ### Known Limitations
 
 - **Regex-fallback scoring:** When no backend SDK is installed, all backends fall back to regex/keyword heuristics. Pass rates under fallback mode are not representative of production backend performance. Check `backend_used` in probe results to confirm the active scorer.
-- **Synchronous execution:** Probes are run sequentially, not in parallel. For large probe sets against slow remote backends, total run time scales linearly. This is intentional to avoid rate-limiting the backend under test.
+- **Per-backend sequential probes:** Within a single backend run, probes are executed sequentially to avoid rate-limiting the backend under test. Comparison runs execute all backends in parallel via `ThreadPoolExecutor`, so total wall time is bounded by the slowest backend, not the sum.
 - **No multimodal probes:** The current probe library is text-only. Image, audio, and video injection vectors are out of scope for version 1.0.
 - **Single-turn probes only:** Multi-turn (conversational) injection attacks (e.g., gradual goal hijacking across a dialogue) are not represented in the built-in library. Custom probes can be added to address this gap.
 - **In-memory report storage:** Reports are held in the server process memory and are lost on restart. Use `GET /redteam/reports/{run_id}/export` immediately after a run to preserve the signed PDF.
